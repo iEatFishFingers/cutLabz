@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --conditions=react-server --import ./tests/setup.ts --test tests/*.test.ts",
+    "seed:mock": "tsx scripts/seed-mock.ts",
+    "seed:mock:remove": "tsx scripts/seed-mock.ts --remove",
     "test:integration": "tsx --conditions=react-server --test --test-concurrency=1 tests/integration/*.integration.test.ts"
   },
   "dependencies": {
