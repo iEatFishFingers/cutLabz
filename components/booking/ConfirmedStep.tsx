@@ -6,11 +6,10 @@ import { formatTime } from "@/lib/availability";
 import {
   formatDate,
   formatGBP,
-  getService,
-  resolveAddons,
   type ConfirmedBooking,
 } from "@/lib/booking-shared";
 import { FOCUS_RING } from "./ServiceStep";
+import { findService, pickAddons, useCatalog } from "./catalog-context";
 
 type Props = {
   booking: ConfirmedBooking;
@@ -24,8 +23,9 @@ export default function ConfirmedStep({ booking, onBookAnother }: Props) {
     headingRef.current?.focus();
   }, []);
 
-  const service = getService(booking.serviceId);
-  const extras = resolveAddons(booking.addonIds);
+  const catalog = useCatalog();
+  const service = findService(catalog, booking.serviceId);
+  const extras = pickAddons(catalog, booking.addonIds);
 
   const rows: [string, string][] = [
     [
@@ -35,7 +35,12 @@ export default function ConfirmedStep({ booking, onBookAnother }: Props) {
     ["BARBER", booking.barberName],
     ["DATE", formatDate(booking.date, { long: true })],
     ["TIME", `${formatTime(booking.startMin)} – ${formatTime(booking.endMin)}`],
-    ["TOTAL", formatGBP(booking.totalGBP)],
+    [
+      "TOTAL",
+      booking.totalGBP === 0 && service?.kind === "membership"
+        ? "£0 · Covered by your membership"
+        : formatGBP(booking.totalGBP),
+    ],
   ];
 
   return (
@@ -80,6 +85,12 @@ export default function ConfirmedStep({ booking, onBookAnother }: Props) {
         >
           BOOK ANOTHER
         </button>
+        <Link
+          href="/account"
+          className={`px-6 py-3 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
+        >
+          MANAGE APPOINTMENTS
+        </Link>
         <Link
           href="/"
           className={`px-6 py-3 text-xs tracking-[0.2em] bg-white text-black border border-white hover:bg-transparent hover:text-white transition ${FOCUS_RING}`}

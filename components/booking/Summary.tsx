@@ -7,9 +7,7 @@ import {
   formatDate,
   formatGBP,
   getBarberName,
-  getService,
   quote,
-  resolveAddons,
   type BookingDraft,
 } from "@/lib/booking-shared";
 
@@ -17,6 +15,8 @@ type Props = {
   draft: BookingDraft;
   variant: "panel" | "bar";
 };
+
+import { findService, pickAddons, useCatalog } from "./catalog-context";
 
 const Empty = () => <span className="text-white/30">—</span>;
 
@@ -30,10 +30,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function Rows({ draft }: { draft: BookingDraft }) {
-  const service = getService(draft.serviceId);
-  const chosen = resolveAddons(draft.addonIds);
-  const q = quote(draft.serviceId, draft.addonIds);
-  const barber = getBarberName(draft.barberId);
+  const catalog = useCatalog();
+  const service = findService(catalog, draft.serviceId);
+  const chosen = pickAddons(catalog, draft.addonIds);
+  const q = quote(catalog, draft.serviceId, draft.addonIds);
+  const barber = getBarberName(catalog, draft.barberId);
   const isMember = service?.kind === "membership";
 
   return (
@@ -91,6 +92,7 @@ function Rows({ draft }: { draft: BookingDraft }) {
 export default function Summary({ draft, variant }: Props) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const catalog = useCatalog();
 
   if (variant === "panel") {
     return (
@@ -101,8 +103,8 @@ export default function Summary({ draft, variant }: Props) {
     );
   }
 
-  const service = getService(draft.serviceId);
-  const q = quote(draft.serviceId, draft.addonIds);
+  const service = findService(catalog, draft.serviceId);
+  const q = quote(catalog, draft.serviceId, draft.addonIds);
   const when = [
     draft.date ? formatDate(draft.date) : null,
     draft.startMin != null ? formatTime(draft.startMin) : null,
@@ -113,7 +115,7 @@ export default function Summary({ draft, variant }: Props) {
   return (
     <aside
       aria-label="Your booking"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-black/80 backdrop-blur-md border-t border-white/10 px-4 py-3"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-black/80 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       {open && service && (
         <div id={panelId} className="max-h-[60vh] overflow-y-auto pt-2 pb-4 mb-3 border-b border-white/10">
@@ -142,7 +144,7 @@ export default function Summary({ draft, variant }: Props) {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls={panelId}
-            className="shrink-0 px-4 py-2 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition focus-visible:outline focus-visible:outline-1 focus-visible:outline-white focus-visible:outline-offset-2"
+            className="shrink-0 min-h-11 px-4 py-2 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition focus-visible:outline focus-visible:outline-1 focus-visible:outline-white focus-visible:outline-offset-2"
           >
             {open ? "HIDE" : "DETAILS"}
           </button>

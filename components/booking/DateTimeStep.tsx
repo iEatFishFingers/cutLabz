@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { getSlotsAction } from "@/app/book/actions";
 import { dayOfWeek, formatTime, type Slot } from "@/lib/availability";
 import {
@@ -8,15 +8,23 @@ import {
   isOpenDay,
   windowDates,
   type BookingDraft,
+  type GetSlotsInput,
   type SlotsResult,
 } from "@/lib/booking-shared";
 import { FOCUS_RING, StepHeader, radioKeyDown } from "./ServiceStep";
+import { useCatalog } from "./catalog-context";
+import { useViewer } from "./viewer-context";
 
 type Props = {
   draft: BookingDraft;
   update: (patch: Partial<BookingDraft>) => void;
   today: string | null;
   notice: string | null;
+  /** Reschedule reuses this picker: custom slot source, no step header. */
+  fetchSlots?: (input: GetSlotsInput) => Promise<SlotsResult>;
+  hideHeader?: boolean;
+  /** Bump to force a refetch of the times. */
+  refreshKey?: number;
 };
 
 const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -46,7 +54,19 @@ const SLOT_GROUPS: { label: string; test: (min: number) => boolean }[] = [
 
 type Fetched = { key: string; result: SlotsResult };
 
-export default function DateTimeStep({ draft, update, today, notice }: Props) {
+export default function DateTimeStep({
+  draft,
+  update,
+  today,
+  notice,
+  fetchSlots = getSlotsAction,
+  hideHeader,
+  refreshKey = 0,
+}: Props) {
+  const catalog = useCatalog();
+  const viewer = useViewer();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [activeDate, setActiveDate] = useState<string | null>(null);
   const [fetched, setFetched] = useState<Fetched | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -54,7 +74,7 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
   const addonKey = addonIds.join(",");
   const requestKey =
     date && serviceId && barberId
-      ? `${date}|${serviceId}|${barberId}|${addonKey}|${attempt}`
+      ? `${date}|${serviceId}|${barberId}|${addonKey}|${attempt}|${refreshKey}`
       : null;
 
   // Fetch slots whenever the inputs change. State is only set in the async
@@ -62,7 +82,7 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
   useEffect(() => {
     if (!requestKey || !date || !serviceId || !barberId) return;
     let active = true;
-    getSlotsAction({
+    fetchSlots({
       date,
       serviceId,
       barberId,
@@ -81,7 +101,7 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
     return () => {
       active = false;
     };
-  }, [requestKey, date, serviceId, barberId, addonKey]);
+  }, [requestKey, date, serviceId, barberId, addonKey, fetchSlots]);
 
   const current = fetched && fetched.key === requestKey ? fetched.result : null;
   const loading = requestKey !== null && current === null;
@@ -93,8 +113,8 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
     if (!current.slots.some((s) => s.startMin === startMin)) update({ startMin: null });
   }, [current, startMin, update]);
 
-  const header = (
-    <StepHeader index={3} title="Pick a time." body="Open Tuesday to Saturday, 11:00 to 21:00." />
+  const header = hideHeader ? null : (
+    <StepHeader index={3} title="Pick a time." body="Closed days are greyed out." />
   );
 
   if (!today) {
@@ -113,6 +133,63 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
   const cells: (string | null)[] = [...Array<null>(lead).fill(null), ...dates];
   while (cells.length % 7 !== 0) cells.push(null);
 
+  // A membership cut cannot be booked after the plan's last day.
+  const memberCut = catalog.services.find((s) => s.id === serviceId)?.kind === "membership";
+  const maxDate = memberCut && viewer.membership ? viewer.membership.endsOn : null;
+  const isBookable = (d: string) => isOpenDay(catalog, d) && (maxDate == null || d <= maxDate);
+  const isOpen = (d: string | null): d is string => d != null && isBookable(d);
+  // Roving tabindex: one tab stop in the grid (selected day, else first open day).
+  const roving =
+    activeDate && isOpen(activeDate) && dates.includes(activeDate)
+      ? activeDate
+      : isOpen(date) && dates.includes(date)
+        ? date
+        : (dates.find((d) => isOpen(d)) ?? null);
+
+  const onGridKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const from = (e.target as HTMLElement).closest<HTMLElement>("[data-date]")?.dataset.date;
+    if (!from) return;
+    const i = cells.indexOf(from);
+    if (i < 0) return;
+    let target: string | null = null;
+    const walk = (step: number) => {
+      for (let j = i + step; j >= 0 && j < cells.length; j += step) {
+        if (isOpen(cells[j])) return cells[j];
+      }
+      return null;
+    };
+    switch (e.key) {
+      case "ArrowRight":
+        target = walk(1);
+        break;
+      case "ArrowLeft":
+        target = walk(-1);
+        break;
+      case "ArrowDown":
+        target = walk(7);
+        break;
+      case "ArrowUp":
+        target = walk(-7);
+        break;
+      case "Home": {
+        const row = Math.floor(i / 7) * 7;
+        target = cells.slice(row, row + 7).find((c) => isOpen(c)) ?? null;
+        break;
+      }
+      case "End": {
+        const row = Math.floor(i / 7) * 7;
+        target = [...cells.slice(row, row + 7)].reverse().find((c) => isOpen(c)) ?? null;
+        break;
+      }
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (!target) return;
+    setActiveDate(target);
+    gridRef.current?.querySelector<HTMLElement>(`[data-date="${target}"]`)?.focus();
+  };
+
   const slotsHaveSelection = slots.some((s) => s.startMin === startMin);
 
   return (
@@ -125,12 +202,24 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
         </p>
       )}
 
+      {maxDate && (
+        <p className="mb-6 text-sm text-white/60">
+          Your membership runs until {formatDate(maxDate, { long: true })}.
+        </p>
+      )}
+
       {/* Date picker */}
       <div className="max-w-md">
         <p className="mb-4 text-xs tracking-[0.2em] text-white/40">
           {rangeLabel(dates[0], dates[dates.length - 1])}
         </p>
-        <div className="grid grid-cols-7 gap-1 sm:gap-2" role="group" aria-label="Choose a date">
+        <div
+          ref={gridRef}
+          onKeyDown={onGridKeyDown}
+          className="grid grid-cols-7 gap-1 sm:gap-2"
+          role="group"
+          aria-label="Choose a date. Use arrow keys to move between days."
+        >
           {WEEKDAYS.map((d) => (
             <span
               key={d}
@@ -142,24 +231,27 @@ export default function DateTimeStep({ draft, update, today, notice }: Props) {
           ))}
           {cells.map((d, i) => {
             if (!d) return <span key={`blank-${i}`} aria-hidden="true" />;
-            const open = isOpenDay(d);
+            const open = isBookable(d);
+            const pastPlan = maxDate != null && d > maxDate;
             const isToday = d === today;
             const selected = d === date;
             const day = Number(d.slice(8, 10));
             const showMonth = day === 1 || d === dates[0];
             const label = `${formatDate(d, { long: true })}${isToday ? ", today" : ""}${
-              open ? "" : ", closed"
+              open ? "" : pastPlan ? ", after your membership ends" : ", closed"
             }`;
             return (
               <button
                 key={d}
                 type="button"
+                data-date={d}
                 disabled={!open}
-                aria-disabled={!open}
+                tabIndex={d === roving ? 0 : -1}
+                onFocus={() => setActiveDate(d)}
                 aria-pressed={selected}
                 aria-label={label}
                 onClick={() => update({ date: d })}
-                className={`relative aspect-square min-h-10 min-w-10 flex flex-col items-center justify-center border text-sm transition ${FOCUS_RING} ${
+                className={`relative aspect-square min-h-11 min-w-0 flex flex-col items-center justify-center border text-sm transition ${FOCUS_RING} ${
                   selected
                     ? "bg-white text-black border-white"
                     : open

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LIMITS,
   validateDetails,
@@ -13,6 +13,10 @@ type Props = {
   draft: BookingDraft;
   update: (patch: Partial<BookingDraft>) => void;
   showErrors: boolean;
+  /** Bumped when the flow wants the first invalid field focused. */
+  focusSignal: number;
+  /** Returns true (once) if a focus request is pending. */
+  consumeFocus: () => boolean;
 };
 
 const INPUT =
@@ -20,9 +24,21 @@ const INPUT =
 const INPUT_INVALID = "border-white/30";
 const LABEL = "mb-2 block text-xs tracking-[0.2em] text-white/40";
 
-export default function DetailsStep({ draft, update, showErrors }: Props) {
+export default function DetailsStep({
+  draft,
+  update,
+  showErrors,
+  focusSignal,
+  consumeFocus,
+}: Props) {
   const [touched, setTouched] = useState<Partial<Record<DetailsField, boolean>>>({});
   const errors = validateDetails(draft);
+
+  // Focus the first invalid field when the flow asks (client or server errors).
+  useEffect(() => {
+    if (!consumeFocus()) return;
+    document.querySelector<HTMLElement>("[data-details-form] [aria-invalid=\"true\"]")?.focus();
+  }, [focusSignal, consumeFocus]);
 
   const errorFor = (f: DetailsField) =>
     showErrors || touched[f] ? errors[f] : undefined;
@@ -45,7 +61,7 @@ export default function DetailsStep({ draft, update, showErrors }: Props) {
   const errorText = (f: DetailsField) => {
     const err = errorFor(f);
     return err ? (
-      <p id={`details-${f}-error`} className="mt-2 text-xs text-red-400">
+      <p id={`details-${f}-error`} role="alert" className="mt-2 text-xs text-red-400">
         {err}
       </p>
     ) : null;
@@ -55,7 +71,7 @@ export default function DetailsStep({ draft, update, showErrors }: Props) {
     <section>
       <StepHeader index={4} title="Your details." body="So we know who's in the chair." />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div data-details-form className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="md:col-span-2">
           <label htmlFor="details-name" className={LABEL}>
             NAME
@@ -76,12 +92,16 @@ export default function DetailsStep({ draft, update, showErrors }: Props) {
           </label>
           <input
             {...fieldProps("email")}
+            readOnly
+            aria-readonly="true"
             type="email"
             inputMode="email"
             autoComplete="email"
             placeholder="you@example.com"
-            onChange={(e) => update({ email: e.target.value })}
+            onChange={() => {}}
+            className={`${fieldProps("email").className} text-white/60 cursor-not-allowed`}
           />
+          <p className="mt-2 text-xs text-white/30">From your account.</p>
           {errorText("email")}
         </div>
 

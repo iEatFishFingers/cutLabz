@@ -1,9 +1,24 @@
 import type { Booking } from "../lib/store";
+import type { BookingViewer } from "../lib/booking-server";
+import type { Membership } from "../lib/membership";
 
-/** Empties the global in-memory store used by lib/store.ts. */
+/** Empties the global in-memory stores (bookings + memberships). */
 export function resetStore() {
-  const g = globalThis as unknown as { __cutlabzBookings?: Booking[] };
+  const g = globalThis as unknown as {
+    __cutlabzBookings?: Booking[];
+    __cutlabzMemberships?: unknown[];
+  };
   if (g.__cutlabzBookings) g.__cutlabzBookings.length = 0;
+  if (g.__cutlabzMemberships) g.__cutlabzMemberships.length = 0;
+}
+
+/** A signed-in viewer, optionally with a membership. */
+export function viewer(p: Partial<BookingViewer> = {}): BookingViewer {
+  return { userId: "user-1", email: "sam@example.com", membership: null, ...p };
+}
+
+export function member(plan = "core", p: Partial<Membership> = {}): Membership {
+  return { id: "mem-1", plan, startsOn: "2026-11-10", endsOn: "2026-12-09", ...p };
 }
 
 let n = 0;

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BOOK_URL } from "@/lib/links";
 
 const pill =
-  "text-xs px-4 py-2 border border-white/20 rounded-full hover:bg-white hover:text-black transition";
+  "text-xs px-2.5 sm:px-4 py-2 border border-white/20 rounded-full hover:bg-white hover:text-black transition";
 
 type NavProps = {
   /** "#hero" on the home page, "/" elsewhere. */
@@ -38,17 +38,17 @@ export default function Nav({
         scrolled ? "bg-black/80" : "bg-black/30"
       }`}
     >
-      <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
         {isAnchor(homeHref) ? (
-          <a href={homeHref} className="text-[14px] tracking-[0.38em] text-white/70 whitespace-nowrap">
+          <a href={homeHref} className="text-[14px] tracking-[0.25em] sm:tracking-[0.38em] text-white/70 whitespace-nowrap">
             CUT LABZ
           </a>
         ) : (
-          <Link href={homeHref} className="text-[14px] tracking-[0.38em] text-white/70 whitespace-nowrap">
+          <Link href={homeHref} className="text-[14px] tracking-[0.25em] sm:tracking-[0.38em] text-white/70 whitespace-nowrap">
             CUT LABZ
           </Link>
         )}
-        <div className="flex gap-3 sm:gap-6 items-center">
+        <div className="flex gap-1.5 sm:gap-4 items-center">
           {isAnchor(membershipHref) ? (
             <a href={membershipHref} className={pill}>
               Membership
@@ -64,6 +64,9 @@ export default function Nav({
             aria-current={bookCurrent ? "page" : undefined}
           >
             Book
+          </Link>
+          <Link href="/account" className={pill}>
+            Account
           </Link>
         </div>
       </div>

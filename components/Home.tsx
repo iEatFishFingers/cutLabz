@@ -234,7 +234,7 @@ export default function Home() {
               dry, face mask, hairline filler spray
             </div>
             <Link
-              href={BOOK_URL}
+              href="/account/membership?plan=core"
               className="block text-center w-full text-xs tracking-[0.2em] px-6 py-3 border border-white/20 hover:bg-white hover:text-black transition"
             >
               JOIN
@@ -263,7 +263,7 @@ export default function Home() {
               dry, face mask, hairline filler spray
             </div>
             <Link
-              href={BOOK_URL}
+              href="/account/membership?plan=plus"
               className="block text-center w-full text-xs tracking-[0.2em] px-6 py-3 border border-black hover:bg-black hover:text-white transition"
             >
               JOIN
@@ -289,7 +289,7 @@ export default function Home() {
               dry, face mask, hairline filler spray
             </div>
             <Link
-              href={BOOK_URL}
+              href="/account/membership?plan=premium"
               className="block text-center w-full text-xs tracking-[0.2em] px-6 py-3 border border-white/20 hover:bg-white hover:text-black transition"
             >
               JOIN

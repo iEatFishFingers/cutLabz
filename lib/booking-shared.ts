@@ -1,12 +1,9 @@
 // Shared booking contract: types + pure helpers used by both the client flow
 // and the server actions. No I/O here, no `new Date()` at module level.
 import {
-  addons,
-  barbers,
-  services,
-  openHours,
   BOOKING_WINDOW_DAYS,
   type Addon,
+  type ClientCatalog,
   type Service,
 } from "./catalog";
 import { dayOfWeek, type Slot } from "./availability";
@@ -79,25 +76,28 @@ export type ConfirmedBooking = {
 
 export type CreateBookingResult =
   | { ok: true; booking: ConfirmedBooking }
+  | { ok: false; code: "error"; error: string }
   | {
       ok: false;
       /** slot_taken: someone booked it first, pick another time.
        *  invalid: input failed validation (see fieldErrors / error).
-       *  unavailable: date/time not bookable (closed, outside window, past). */
-      code: "slot_taken" | "invalid" | "unavailable";
+       *  unavailable: date/time not bookable (closed, outside window, past).
+       *  auth: not signed in. membership: member-only service / plan ended or doesn't cover the date.
+       *  limit: too many upcoming bookings (or an upcoming member cut already). */
+      code: "slot_taken" | "invalid" | "unavailable" | "auth" | "membership" | "limit";
       error: string;
       fieldErrors?: FieldErrors;
     };
 
-export const getService = (id: string | null): Service | undefined =>
-  services.find((s) => s.id === id);
+export const getService = (catalog: ClientCatalog, id: string | null): Service | undefined =>
+  catalog.services.find((s) => s.id === id);
 
-export const getBarberName = (id: string | null): string | undefined =>
-  id === "any" ? "Any available" : barbers.find((b) => b.id === id)?.name;
+export const getBarberName = (catalog: ClientCatalog, id: string | null): string | undefined =>
+  id === "any" ? "Any available" : catalog.barbers.find((b) => b.id === id)?.name;
 
 /** Valid, de-duplicated add-ons in catalog order. Unknown ids are dropped. */
-export function resolveAddons(addonIds: string[]): Addon[] {
-  return addons.filter((a) => addonIds.includes(a.id));
+export function resolveAddons(catalog: ClientCatalog, addonIds: string[]): Addon[] {
+  return catalog.addons.filter((a) => addonIds.includes(a.id));
 }
 
 /** Premium membership includes add-ons for free. */
@@ -107,12 +107,13 @@ export function addonPrice(service: Service | undefined, addon: Addon): number {
 
 /** Authoritative duration + price. Server always recomputes with this. */
 export function quote(
+  catalog: ClientCatalog,
   serviceId: string | null,
   addonIds: string[],
 ): { durationMin: number; totalGBP: number } | null {
-  const service = getService(serviceId);
+  const service = getService(catalog, serviceId);
   if (!service) return null;
-  const chosen = resolveAddons(addonIds);
+  const chosen = resolveAddons(catalog, addonIds);
   return {
     durationMin: service.durationMin + chosen.reduce((n, a) => n + a.extraMin, 0),
     totalGBP: service.priceGBP + chosen.reduce((n, a) => n + addonPrice(service, a), 0),
@@ -163,7 +164,8 @@ export function isInWindow(date: string, today: string): boolean {
   return date >= today && date <= addDays(today, BOOKING_WINDOW_DAYS - 1);
 }
 
-export const isOpenDay = (date: string): boolean => openHours[dayOfWeek(date)] != null;
+export const isOpenDay = (catalog: ClientCatalog, date: string): boolean =>
+  catalog.barbers.some((b) => (b.hours[dayOfWeek(date)] ?? []).length > 0);
 
 /** "Tue 18 Nov" style label, computed without the runtime clock. */
 export function formatDate(date: string, opts?: { long?: boolean }): string {
@@ -178,18 +180,24 @@ export function formatDate(date: string, opts?: { long?: boolean }): string {
 
 export const LIMITS = { name: 80, email: 254, phone: 20, notes: 500 } as const;
 
-/** Shared details validation (client shows inline, server enforces). */
-export function validateDetails(d: Pick<BookingDraft, DetailsField>): FieldErrors {
+/** Name/phone/notes only: the server uses the signed-in account email instead. */
+export function validateContact(d: Pick<BookingDraft, "name" | "phone" | "notes">): FieldErrors {
   const e: FieldErrors = {};
   const name = d.name.trim();
-  const email = d.email.trim();
   const phoneDigits = d.phone.replace(/[\s()+-]/g, "");
   if (name.length < 2) e.name = "Enter your name.";
   else if (name.length > LIMITS.name) e.name = `Max ${LIMITS.name} characters.`;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > LIMITS.email)
-    e.email = "Enter a valid email.";
   if (!/^\d{7,15}$/.test(phoneDigits) || d.phone.trim().length > LIMITS.phone)
     e.phone = "Enter a valid phone number.";
   if (d.notes.length > LIMITS.notes) e.notes = `Max ${LIMITS.notes} characters.`;
+  return e;
+}
+
+/** Shared details validation (client shows inline). */
+export function validateDetails(d: Pick<BookingDraft, DetailsField>): FieldErrors {
+  const e: FieldErrors = validateContact(d);
+  const email = d.email.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > LIMITS.email)
+    e.email = "Enter a valid email.";
   return e;
 }

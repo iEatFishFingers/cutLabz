@@ -1,9 +1,9 @@
 import { beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { createBooking, getSlots } from "../lib/booking-server";
-import { listBookingsForDate } from "../lib/store";
+import { cancelBooking, listBookingsForDate } from "../lib/store";
 import type { CreateBookingInput } from "../lib/booking-shared";
-import { hm, resetStore } from "./helpers";
+import { hm, member, resetStore, viewer } from "./helpers";
 
 // Tuesday 2026-11-17, 10:00 London.
 const NOW = { date: "2026-11-17", min: hm(10) };
@@ -26,26 +26,31 @@ async function expectFail(p: Parameters<typeof input>[0] | unknown, code: string
   const r = await createBooking(
     typeof p === "object" && p !== null && !Array.isArray(p) ? input(p as Partial<CreateBookingInput>) : p,
     now,
+    viewer(),
   );
   assert.equal(r.ok, false, JSON.stringify(r));
   if (!r.ok) assert.equal(r.code, code, r.error);
   return r;
 }
 
+const cancelAll = async () => {
+  for (const b of await listBookingsForDate(WED)) await cancelBooking(b.userId ?? "", b.id);
+};
+
 describe("createBooking", () => {
   beforeEach(resetStore);
 
   test("happy path returns a confirmed booking with a reference", async () => {
-    const r = await createBooking(input({ addonIds: ["hot-towel"] }), NOW);
+    const r = await createBooking(input({ addonIds: ["hot-towel"] }), NOW, viewer());
     assert.equal(r.ok, true, JSON.stringify(r));
     if (!r.ok) return;
     const b = r.booking;
     assert.match(b.reference, /^CL-[0-9A-F]{6}$/);
     assert.equal(b.barberId, "barber-1");
-    assert.equal(b.barberName, "Barber One");
-    assert.equal(b.durationMin, 40);
+    assert.equal(b.barberName, "Wayne Graham");
+    assert.equal(b.durationMin, 30);
     assert.equal(b.startMin, hm(12));
-    assert.equal(b.endMin, hm(12, 40));
+    assert.equal(b.endMin, hm(12, 30));
     assert.equal(b.totalGBP, 25);
     assert.deepEqual(b.addonIds, ["hot-towel"]);
 
@@ -57,55 +62,91 @@ describe("createBooking", () => {
   });
 
   test("double-booking the same barber/slot returns slot_taken", async () => {
-    assert.equal((await createBooking(input(), NOW)).ok, true);
+    assert.equal((await createBooking(input(), NOW, viewer())).ok, true);
     await expectFail({}, "slot_taken");
     // Overlapping (not identical) start is also taken.
     await expectFail({ startMin: hm(12, 15) }, "slot_taken");
     // Adjacent is fine.
-    assert.equal((await createBooking(input({ startMin: hm(12, 30) }), NOW)).ok, true);
+    assert.equal((await createBooking(input({ startMin: hm(12, 30) }), NOW, viewer())).ok, true);
   });
 
   test("'any' assigns the free barber, then slot_taken when both are busy", async () => {
-    const first = await createBooking(input({ barberId: "any" }), NOW);
+    const first = await createBooking(input({ barberId: "any" }), NOW, viewer());
     assert.ok(first.ok && first.booking.barberId === "barber-1", JSON.stringify(first));
-    const second = await createBooking(input({ barberId: "any" }), NOW);
+    const second = await createBooking(input({ barberId: "any" }), NOW, viewer());
     assert.ok(second.ok && second.booking.barberId === "barber-2", JSON.stringify(second));
     await expectFail({ barberId: "any" }, "slot_taken");
   });
 
   test("'any' prefers the barber with fewer bookings that day", async () => {
-    assert.equal((await createBooking(input({ startMin: hm(15) }), NOW)).ok, true); // barber-1 busy later
-    const r = await createBooking(input({ barberId: "any", startMin: hm(12) }), NOW);
+    assert.equal((await createBooking(input({ startMin: hm(15) }), NOW, viewer())).ok, true); // barber-1 busy later
+    const r = await createBooking(input({ barberId: "any", startMin: hm(12) }), NOW, viewer());
     assert.ok(r.ok && r.booking.barberId === "barber-2", JSON.stringify(r));
   });
 
   test("'any' skips a barber whose specific booking took the slot", async () => {
-    assert.equal((await createBooking(input({ barberId: "barber-1" }), NOW)).ok, true);
-    const r = await createBooking(input({ barberId: "any" }), NOW);
+    assert.equal((await createBooking(input({ barberId: "barber-1" }), NOW, viewer())).ok, true);
+    const r = await createBooking(input({ barberId: "any" }), NOW, viewer());
     assert.ok(r.ok && r.booking.barberId === "barber-2");
   });
 
   test("price comes from the catalog, never the client", async () => {
     const r = await createBooking(
-      { ...input({ serviceId: "premium", addonIds: ["hot-towel", "wash-dry", "hot-towel"] }), totalGBP: 1, durationMin: 5 } as CreateBookingInput,
+      { ...input({ serviceId: "haircut", addonIds: ["hot-towel", "wash-dry", "hot-towel"] }), totalGBP: 1, durationMin: 5 } as CreateBookingInput,
       NOW,
+      viewer(),
     );
     assert.ok(r.ok, JSON.stringify(r));
     if (!r.ok) return;
-    assert.equal(r.booking.totalGBP, 0, "premium add-ons are free");
-    assert.equal(r.booking.durationMin, 80);
+    assert.equal(r.booking.totalGBP, 30, "20 + two 5 add-ons, client total ignored");
+    assert.equal(r.booking.durationMin, 30);
     assert.deepEqual(r.booking.addonIds, ["hot-towel", "wash-dry"], "de-duped");
 
     const r2 = await createBooking(
       { ...input({ serviceId: "haircut-beard", addonIds: ["mask-steam", "filler"], barberId: "barber-2" }), totalGBP: 0 } as CreateBookingInput,
       NOW,
+      viewer(),
     );
-    assert.ok(r2.ok && r2.booking.totalGBP === 35 && r2.booking.durationMin === 55, JSON.stringify(r2));
+    assert.ok(r2.ok && r2.booking.totalGBP === 35 && r2.booking.durationMin === 30, JSON.stringify(r2));
   });
 
-  test("bad email returns invalid with fieldErrors", async () => {
-    const r = await expectFail({ email: "nope" }, "invalid");
-    if (!r.ok) assert.ok(r.fieldErrors?.email);
+  test("bad name returns invalid with fieldErrors", async () => {
+    const r = await expectFail({ name: "S" }, "invalid");
+    assert.ok(!r.ok && r.code !== "error" && r.fieldErrors?.name);
+  });
+
+  test("email comes from the viewer, never the client", async () => {
+    let start = 12;
+    for (const email of ["nope", "", "evil@example.com"]) {
+      const r = await createBooking(
+        input({ email, startMin: hm(start++) }),
+        NOW,
+        viewer({ email: " Me@Example.com " }),
+      );
+      assert.ok(r.ok, JSON.stringify(r));
+      await cancelAll(); // stay under the 3-upcoming limit
+    }
+    const noEmail = { ...input() } as Record<string, unknown>;
+    delete noEmail.email;
+    const r = await createBooking(noEmail, NOW, viewer({ email: "me@example.com" }));
+    assert.ok(r.ok, JSON.stringify(r));
+    const rows = await listBookingsForDate(WED);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].email, "me@example.com");
+  });
+
+  test("no viewer is rejected with code auth", async () => {
+    const r = await createBooking(input(), NOW);
+    assert.ok(!r.ok && r.code === "auth", JSON.stringify(r));
+    assert.equal((await listBookingsForDate(WED)).length, 0);
+  });
+
+  test("booking stores userId; one-off has no membershipId", async () => {
+    const r = await createBooking(input(), NOW, viewer({ userId: "u-9" }));
+    assert.ok(r.ok);
+    const [row] = await listBookingsForDate(WED);
+    assert.equal(row.userId, "u-9");
+    assert.equal(row.membershipId, null);
   });
 
   test("validation codes", async () => {
@@ -133,8 +174,18 @@ describe("createBooking", () => {
     assert.equal((await listBookingsForDate(WED)).length, 0);
   });
 
+  test("closed days are 'unavailable' for any barber choice and write nothing", async () => {
+    for (const barberId of ["any", "barber-1", "barber-2"]) {
+      for (const date of ["2026-11-22", "2026-11-23"]) {
+        await expectFail({ date, barberId }, "unavailable");
+      }
+    }
+    assert.equal((await listBookingsForDate("2026-11-22")).length, 0);
+    assert.equal((await listBookingsForDate("2026-11-23")).length, 0);
+  });
+
   test("same-day booking beyond the notice period works", async () => {
-    const r = await createBooking(input({ date: "2026-11-17", startMin: hm(11) }), NOW);
+    const r = await createBooking(input({ date: "2026-11-17", startMin: hm(11) }), NOW, viewer());
     assert.ok(r.ok, JSON.stringify(r));
   });
 });
@@ -143,40 +194,40 @@ describe("getSlots", () => {
   beforeEach(resetStore);
 
   test("'any' returns the union of free barbers", async () => {
-    await createBooking(input({ barberId: "barber-1", startMin: hm(12) }), NOW);
-    const r = await getSlots({ date: WED, serviceId: "haircut", addonIds: [], barberId: "any" }, NOW);
+    await createBooking(input({ barberId: "barber-1", startMin: hm(12) }), NOW, viewer());
+    const r = await getSlots({ date: WED, serviceId: "haircut", addonIds: [], barberId: "any" }, NOW, viewer());
     assert.ok(r.ok);
     if (!r.ok) return;
     assert.deepEqual(r.slots.find((s) => s.startMin === hm(12))?.barberIds, ["barber-2"]);
     assert.deepEqual(r.slots.find((s) => s.startMin === hm(13))?.barberIds, ["barber-1", "barber-2"]);
 
-    const one = await getSlots({ date: WED, serviceId: "haircut", addonIds: [], barberId: "barber-1" }, NOW);
+    const one = await getSlots({ date: WED, serviceId: "haircut", addonIds: [], barberId: "barber-1" }, NOW, viewer());
     assert.ok(one.ok && !one.slots.some((s) => s.startMin === hm(12)));
   });
 
-  test("duration includes add-ons (affects last slot)", async () => {
-    const r = await getSlots({ date: WED, serviceId: "premium", addonIds: ["hot-towel"], barberId: "any" }, NOW);
-    assert.ok(r.ok && r.slots.at(-1)?.startMin === hm(19, 45)); // 70 min -> 19:45 + 70 = 20:55
+  test("add-ons add no time today: last 30-min slot is 20:30", async () => {
+    const r = await getSlots({ date: WED, serviceId: "premium", addonIds: ["hot-towel"], barberId: "any" }, NOW, viewer({ membership: member("premium") }));
+    assert.ok(r.ok && r.slots.at(-1)?.startMin === hm(20, 30));
   });
 
   test("closed or out-of-window dates give empty slots", async () => {
-    const closed = await getSlots({ date: "2026-11-22", serviceId: "core", addonIds: [], barberId: "any" }, NOW);
+    const closed = await getSlots({ date: "2026-11-22", serviceId: "haircut", addonIds: [], barberId: "any" }, NOW, viewer());
     assert.deepEqual(closed, { ok: true, slots: [] });
-    const far = await getSlots({ date: "2027-01-05", serviceId: "core", addonIds: [], barberId: "any" }, NOW);
+    const far = await getSlots({ date: "2027-01-05", serviceId: "haircut", addonIds: [], barberId: "any" }, NOW, viewer());
     assert.deepEqual(far, { ok: true, slots: [] });
   });
 
   test("invalid ids or shapes give an error", async () => {
     const bad = [
       { date: WED, serviceId: "bogus", addonIds: [], barberId: "any" },
-      { date: WED, serviceId: "core", addonIds: ["bogus"], barberId: "any" },
-      { date: WED, serviceId: "core", addonIds: [], barberId: "nobody" },
-      { date: "18/11/2026", serviceId: "core", addonIds: [], barberId: "any" },
+      { date: WED, serviceId: "haircut", addonIds: ["bogus"], barberId: "any" },
+      { date: WED, serviceId: "haircut", addonIds: [], barberId: "nobody" },
+      { date: "18/11/2026", serviceId: "haircut", addonIds: [], barberId: "any" },
       null,
       [],
     ];
     for (const b of bad) {
-      const r = await getSlots(b, NOW);
+      const r = await getSlots(b, NOW, viewer());
       assert.equal(r.ok, false, JSON.stringify(b));
     }
   });

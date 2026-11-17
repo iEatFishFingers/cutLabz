@@ -10,6 +10,7 @@ import {
   validateDetails,
   windowDates,
 } from "../lib/booking-shared";
+import { seedCatalog as C } from "../lib/catalog";
 
 describe("booking-shared", () => {
   test("shopNow in BST (summer) is UTC+1", () => {
@@ -49,16 +50,25 @@ describe("booking-shared", () => {
   });
 
   test("isOpenDay: Tue-Sat open, Sun/Mon closed", () => {
-    assert.equal(isOpenDay("2026-11-17"), true);
-    assert.equal(isOpenDay("2026-11-21"), true);
-    assert.equal(isOpenDay("2026-11-22"), false);
-    assert.equal(isOpenDay("2026-11-23"), false);
+    assert.equal(isOpenDay(C, "2026-11-17"), true);
+    assert.equal(isOpenDay(C, "2026-11-21"), true);
+    assert.equal(isOpenDay(C, "2026-11-22"), false);
+    assert.equal(isOpenDay(C, "2026-11-23"), false);
   });
 
   test("quote: premium add-ons are free, others are charged, duplicates/unknown dropped", () => {
-    assert.deepEqual(quote("premium", ["hot-towel", "filler"]), { durationMin: 75, totalGBP: 0 });
-    assert.deepEqual(quote("haircut", ["hot-towel", "hot-towel", "bogus"]), { durationMin: 40, totalGBP: 25 });
-    assert.equal(quote("bogus", []), null);
+    assert.deepEqual(quote(C, "premium", ["hot-towel", "filler"]), { durationMin: 30, totalGBP: 0 });
+    assert.deepEqual(quote(C, "haircut", ["hot-towel", "hot-towel", "bogus"]), { durationMin: 30, totalGBP: 25 });
+    assert.equal(quote(C, "bogus", []), null);
+  });
+
+  test("quote: add-on extraMin is added to duration (custom catalog)", () => {
+    const custom = {
+      ...C,
+      addons: C.addons.map((a) => (a.id === "hot-towel" ? { ...a, extraMin: 10 } : a.id === "filler" ? { ...a, extraMin: 5 } : a)),
+    };
+    assert.deepEqual(quote(custom, "premium", ["hot-towel", "filler"]), { durationMin: 45, totalGBP: 0 });
+    assert.deepEqual(quote(custom, "haircut", ["hot-towel", "hot-towel"]), { durationMin: 40, totalGBP: 25 });
   });
 
   test("validateDetails", () => {

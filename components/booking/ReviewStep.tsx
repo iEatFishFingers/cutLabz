@@ -8,17 +8,20 @@ import {
   formatDate,
   formatGBP,
   getBarberName,
-  getService,
   quote,
-  resolveAddons,
   type BookingDraft,
 } from "@/lib/booking-shared";
 import { FOCUS_RING, StepHeader } from "./ServiceStep";
+import { findService, pickAddons, useCatalog } from "./catalog-context";
 
 type Props = {
   draft: BookingDraft;
   onEdit: (step: number) => void;
   error: string | null;
+  /** Shown as a button next to the error when the menu is stale. */
+  onReload?: () => void;
+  /** Link shown next to the error (sign in, membership, appointments). */
+  link?: { href: string; label: string } | null;
 };
 
 function Section({
@@ -50,20 +53,40 @@ function Section({
   );
 }
 
-export default function ReviewStep({ draft, onEdit, error }: Props) {
-  const service = getService(draft.serviceId);
-  const chosen = resolveAddons(draft.addonIds);
-  const q = quote(draft.serviceId, draft.addonIds);
-  const barberName = getBarberName(draft.barberId);
+export default function ReviewStep({ draft, onEdit, error, onReload, link }: Props) {
+  const catalog = useCatalog();
+  const service = findService(catalog, draft.serviceId);
+  const chosen = pickAddons(catalog, draft.addonIds);
+  const q = quote(catalog, draft.serviceId, draft.addonIds);
+  const barberName = getBarberName(catalog, draft.barberId);
 
   return (
     <section>
       <StepHeader index={5} title="Review and confirm." body="Check everything looks right." />
 
       {error && (
-        <p role="alert" className="mb-6 text-sm text-red-400">
-          {error}
-        </p>
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          <p role="alert" className="text-sm text-red-400">
+            {error}
+          </p>
+          {onReload && (
+            <button
+              type="button"
+              onClick={onReload}
+              className={`px-6 py-3 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
+            >
+              RELOAD
+            </button>
+          )}
+          {link && (
+            <Link
+              href={link.href}
+              className={`inline-flex items-center min-h-11 px-6 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
+            >
+              {link.label}
+            </Link>
+          )}
+        </div>
       )}
 
       <div className="bg-[#111] border border-white/10 rounded-xl p-6 md:p-8">
@@ -116,7 +139,12 @@ export default function ReviewStep({ draft, onEdit, error }: Props) {
               <p className="text-xs tracking-[0.2em] text-white/40">TOTAL</p>
               <p className="mt-1 text-sm text-white/50">{q.durationMin} min</p>
             </div>
-            <p className="text-3xl font-[500] tracking-[-0.02em]">{formatGBP(q.totalGBP)}</p>
+            <div className="text-right">
+              <p className="text-3xl font-[500] tracking-[-0.02em]">{formatGBP(q.totalGBP)}</p>
+              {service?.kind === "membership" && q.totalGBP === 0 && (
+                <p className="mt-1 text-xs text-white/40">Covered by your membership</p>
+              )}
+            </div>
           </div>
         )}
       </div>

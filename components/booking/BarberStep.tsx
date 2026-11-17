@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { barbers } from "@/lib/catalog";
 import type { BookingDraft } from "@/lib/booking-shared";
 import {
   CARD_BASE,
@@ -10,10 +9,13 @@ import {
   StepHeader,
   radioKeyDown,
 } from "./ServiceStep";
+import { useCatalog } from "./catalog-context";
 
 type Props = {
   draft: BookingDraft;
   update: (patch: Partial<BookingDraft>) => void;
+  /** Reschedule reuses this step without the booking-flow header. */
+  hideHeader?: boolean;
 };
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -25,7 +27,8 @@ function monogram(name: string): string {
   return letters.toUpperCase();
 }
 
-export default function BarberStep({ draft, update }: Props) {
+export default function BarberStep({ draft, update, hideHeader }: Props) {
+  const { barbers } = useCatalog();
   const options = [
     {
       id: "any",
@@ -39,7 +42,9 @@ export default function BarberStep({ draft, update }: Props) {
 
   return (
     <section>
-      <StepHeader index={2} title="Pick your barber." body="Choose someone, or take the first free chair." />
+      {!hideHeader && (
+        <StepHeader index={2} title="Pick your barber." body="Choose someone, or take the first free chair." />
+      )}
 
       <div
         role="radiogroup"

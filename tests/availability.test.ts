@@ -1,7 +1,11 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { computeSlots, dayOfWeek, formatTime } from "../lib/availability";
+import { seedCatalog } from "../lib/catalog";
 import { booking, hm } from "./helpers";
+
+const compute = (o: Omit<Parameters<typeof computeSlots>[0], "catalog">) =>
+  computeSlots({ ...o, catalog: seedCatalog });
 
 // 2026-11-17 is a Tuesday.
 const NOW = { date: "2026-11-17", min: hm(9) };
@@ -19,7 +23,7 @@ describe("computeSlots", () => {
   test("closed days (Sun/Mon) return no slots", () => {
     for (const date of ["2026-11-22", "2026-11-23"]) {
       assert.deepEqual(
-        computeSlots({ date, durationMin: 25, barberId: "any", bookings: [], now: NOW }),
+        compute({ date, durationMin: 25, barberId: "any", bookings: [], now: NOW }),
         [],
       );
     }
@@ -27,48 +31,48 @@ describe("computeSlots", () => {
 
   test("past dates return no slots", () => {
     assert.deepEqual(
-      computeSlots({ date: "2026-11-14", durationMin: 25, barberId: "any", bookings: [], now: NOW }),
+      compute({ date: "2026-11-14", durationMin: 25, barberId: "any", bookings: [], now: NOW }),
       [],
     );
   });
 
   test("same day hides starts before now + 60 min", () => {
     const now = { date: "2026-11-17", min: hm(13, 10) };
-    const slots = computeSlots({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now });
+    const slots = compute({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now });
     assert.equal(slots[0].startMin, hm(14, 15));
     assert.ok(slots.every((s) => s.startMin >= now.min + 60));
   });
 
   test("same day exactly on a step boundary keeps that start", () => {
     const now = { date: "2026-11-17", min: hm(13) };
-    const slots = computeSlots({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now });
+    const slots = compute({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now });
     assert.equal(slots[0].startMin, hm(14));
   });
 
   test("same day after closing returns nothing", () => {
     const now = { date: "2026-11-17", min: hm(20, 30) };
     assert.deepEqual(
-      computeSlots({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now }),
+      compute({ date: now.date, durationMin: 25, barberId: "any", bookings: [], now }),
       [],
     );
   });
 
   test("future open day starts at opening, 15-min steps", () => {
-    const s = starts(computeSlots({ date: WED, durationMin: 25, barberId: "any", bookings: [], now: NOW }));
+    const s = starts(compute({ date: WED, durationMin: 25, barberId: "any", bookings: [], now: NOW }));
     assert.equal(s[0], hm(11));
     assert.equal(s[1], hm(11, 15));
   });
 
   test("end-of-day cutoff: 25 min -> last 20:30, 60 min -> last 20:00", () => {
-    const s25 = starts(computeSlots({ date: WED, durationMin: 25, barberId: "any", bookings: [], now: NOW }));
+    const s25 = starts(compute({ date: WED, durationMin: 25, barberId: "any", bookings: [], now: NOW }));
     assert.equal(formatTime(s25.at(-1)!), "20:30");
-    const s60 = starts(computeSlots({ date: WED, durationMin: 60, barberId: "any", bookings: [], now: NOW }));
+    const s60 = starts(compute({ date: WED, durationMin: 60, barberId: "any", bookings: [], now: NOW }));
     assert.equal(formatTime(s60.at(-1)!), "20:00");
   });
 
   test("overlap removes starts but keeps touching ones", () => {
     const bookings = [booking({ date: WED, startMin: hm(12), endMin: hm(12, 30), barberId: "barber-1" })];
-    const s = starts(computeSlots({ date: WED, durationMin: 30, barberId: "barber-1", bookings, now: NOW }));
+    const s = starts(compute({ date: WED, durationMin: 30, barberId: "barber-1", bookings, now: NOW }));
     assert.ok(s.includes(hm(11, 30)), "ends exactly at 12:00 -> allowed");
     assert.ok(!s.includes(hm(11, 45)));
     assert.ok(!s.includes(hm(12)));
@@ -82,7 +86,7 @@ describe("computeSlots", () => {
       booking({ date: WED, startMin: hm(14), endMin: hm(14, 30), barberId: "barber-1" }),
       booking({ date: WED, startMin: hm(14), endMin: hm(14, 30), barberId: "barber-2" }),
     ];
-    const slots = computeSlots({ date: WED, durationMin: 30, barberId: "any", bookings, now: NOW });
+    const slots = compute({ date: WED, durationMin: 30, barberId: "any", bookings, now: NOW });
     const at = (m: number) => slots.find((s) => s.startMin === m);
     assert.deepEqual(at(hm(11))?.barberIds, ["barber-1", "barber-2"]);
     assert.deepEqual(at(hm(12))?.barberIds, ["barber-2"]);
@@ -91,14 +95,14 @@ describe("computeSlots", () => {
 
   test("a specific barber ignores other barbers' bookings", () => {
     const bookings = [booking({ date: WED, startMin: hm(12), endMin: hm(13), barberId: "barber-2" })];
-    const slots = computeSlots({ date: WED, durationMin: 30, barberId: "barber-1", bookings, now: NOW });
+    const slots = compute({ date: WED, durationMin: 30, barberId: "barber-1", bookings, now: NOW });
     assert.ok(slots.some((s) => s.startMin === hm(12)));
     assert.ok(slots.every((s) => s.barberIds.length === 1 && s.barberIds[0] === "barber-1"));
   });
 
   test("bookings on other dates are ignored only if caller filters (store does)", () => {
     // computeSlots trusts its input list to be for `date` (listBookingsForDate).
-    const slots = computeSlots({ date: WED, durationMin: 30, barberId: "barber-1", bookings: [], now: NOW });
+    const slots = compute({ date: WED, durationMin: 30, barberId: "barber-1", bookings: [], now: NOW });
     assert.equal(slots.length, (hm(21) - 30 - hm(11)) / 15 + 1);
   });
 });

@@ -1,8 +1,10 @@
--- Cut Labz schema. Run once in Supabase: SQL Editor -> New query -> paste -> Run.
+-- Cut Labz schema (mirrors what is applied in Supabase, project kqomhuuwpvdxhranptke).
+-- Applied as migrations: init_cutlabz_schema, security_hardening, replace_availability_fn.
 -- Dates/times are shop-local (Europe/London): booking_date + minutes from midnight,
 -- matching lib/store.ts and lib/availability.ts.
 
-create extension if not exists btree_gist;
+create schema if not exists extensions;
+create extension if not exists btree_gist with schema extensions;
 
 -- ---------- Catalog ----------
 create table if not exists public.barbers (
@@ -40,6 +42,8 @@ create table if not exists public.availability (
   close_min  int  not null check (close_min between 0 and 1440 and close_min > open_min)
 );
 
+-- `reason` is private: there is deliberately NO public read policy on this table.
+-- The server reads it with the service-role key and exposes only the dates.
 create table if not exists public.time_off (
   id         bigint generated always as identity primary key,
   barber_id  text not null references public.barbers(id) on delete cascade,
@@ -81,15 +85,22 @@ create index if not exists bookings_date_idx on public.bookings (booking_date);
 create index if not exists bookings_email_idx on public.bookings (lower(email));
 
 -- ---------- Admin check ----------
--- Barbers/admins are users listed here (add rows after they sign up).
+-- Admins are users listed here (add a row after the user exists in Auth).
 create table if not exists public.admins (
   user_id uuid primary key references auth.users(id) on delete cascade
 );
 
-create or replace function public.is_admin() returns boolean
+-- Lives in a non-exposed schema so it cannot be called over the public API.
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.is_admin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.admins where user_id = auth.uid());
+  select exists (select 1 from public.admins where user_id = (select auth.uid()));
 $$;
+revoke execute on function private.is_admin() from public, anon;
+grant execute on function private.is_admin() to authenticated;
 
 -- ---------- Row Level Security ----------
 alter table public.barbers      enable row level security;
@@ -100,49 +111,104 @@ alter table public.time_off     enable row level security;
 alter table public.bookings     enable row level security;
 alter table public.admins       enable row level security;
 
--- Public can read the catalog (needed for the booking page).
+-- Public can read the catalog (not time_off, which has private reasons).
 create policy "catalog read barbers"      on public.barbers      for select using (true);
 create policy "catalog read services"     on public.services     for select using (true);
 create policy "catalog read addons"       on public.addons       for select using (true);
 create policy "catalog read availability" on public.availability for select using (true);
-create policy "catalog read time_off"     on public.time_off     for select using (true);
 
 -- Admins manage everything.
-create policy "admin all barbers"      on public.barbers      for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin all services"     on public.services     for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin all addons"       on public.addons       for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin all availability" on public.availability for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin all time_off"     on public.time_off     for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin all bookings"     on public.bookings     for all using (public.is_admin()) with check (public.is_admin());
+create policy "admin all barbers"      on public.barbers      for all to authenticated using (private.is_admin()) with check (private.is_admin());
+create policy "admin all services"     on public.services     for all to authenticated using (private.is_admin()) with check (private.is_admin());
+create policy "admin all addons"       on public.addons       for all to authenticated using (private.is_admin()) with check (private.is_admin());
+create policy "admin all availability" on public.availability for all to authenticated using (private.is_admin()) with check (private.is_admin());
+create policy "admin all time_off"     on public.time_off     for all to authenticated using (private.is_admin()) with check (private.is_admin());
+create policy "admin all bookings"     on public.bookings     for all to authenticated using (private.is_admin()) with check (private.is_admin());
+
+-- A signed-in user may see their own admins row (used by the app's admin check).
+create policy "admin reads self" on public.admins
+  for select to authenticated using (user_id = (select auth.uid()));
 
 -- Customers: bookings contain personal data, so there is deliberately NO public
 -- read/insert policy. The Next.js server creates bookings with the service-role
 -- key (after validating input) and customers only see their own via their login.
 create policy "customer reads own bookings" on public.bookings
-  for select using (user_id = auth.uid());
+  for select to authenticated using (user_id = (select auth.uid()));
 
--- ---------- Seed (matches lib/catalog.ts placeholders) ----------
+-- ---------- Atomic weekly-hours swap (used by /admin/hours) ----------
+-- SECURITY INVOKER: runs with the caller's RLS, so only admins can change hours.
+create or replace function public.replace_availability(p_barber text, p_rows jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if jsonb_typeof(p_rows) is distinct from 'array' then
+    raise exception 'rows must be an array';
+  end if;
+  delete from public.availability where barber_id = p_barber;
+  insert into public.availability (barber_id, weekday, open_min, close_min)
+  select p_barber, (r->>'weekday')::int, (r->>'open_min')::int, (r->>'close_min')::int
+  from jsonb_array_elements(p_rows) r;
+end;
+$$;
+revoke execute on function public.replace_availability(text, jsonb) from public, anon;
+grant execute on function public.replace_availability(text, jsonb) to authenticated;
+
+-- ---------- Customer accounts + memberships ----------
+-- Applied as migration: customer_accounts_memberships.
+-- A membership is a dated period (no stacking: the exclusion constraint forbids
+-- overlapping periods for one user). Customers can read their own; all writes
+-- happen on the Next.js server (service-role) after it checks the signed-in user.
+create table if not exists public.memberships (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  plan       text not null references public.services(id),
+  starts_on  date not null,
+  ends_on    date not null check (ends_on >= starts_on),
+  created_at timestamptz not null default now(),
+  constraint memberships_no_overlap exclude using gist (
+    user_id with =,
+    daterange(starts_on, ends_on, '[]') with &&
+  )
+);
+create index if not exists memberships_user_idx on public.memberships (user_id, ends_on desc);
+alter table public.memberships enable row level security;
+create policy "customer reads own memberships" on public.memberships
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "admin all memberships" on public.memberships
+  for all to authenticated using (private.is_admin()) with check (private.is_admin());
+
+alter table public.bookings
+  add column if not exists membership_id uuid references public.memberships(id) on delete set null,
+  add column if not exists cancelled_at  timestamptz;
+create index if not exists bookings_user_idx on public.bookings (user_id, booking_date);
+create index if not exists bookings_membership_idx on public.bookings (membership_id) where membership_id is not null;
+
+-- ---------- Seed (matches lib/catalog.ts seedCatalog) ----------
+-- Real barbers; every service ~30 min including add-ons (confirmed by the owner).
 insert into public.barbers (id, name, role) values
-  ('barber-1','Barber One','Senior barber'),
-  ('barber-2','Barber Two','Barber')
+  ('barber-1','Wayne Graham','Barber'),
+  ('barber-2','Ayaan Ali','Barber')
 on conflict (id) do nothing;
 
 insert into public.services (id, name, description, duration_min, price_pence, kind) values
-  ('core','Core Membership Cut','Unlimited haircuts • 25 min',25,0,'membership'),
-  ('plus','Plus Membership Cut','Haircut + beard trim • 35 min',35,0,'membership'),
-  ('premium','Premium Membership Cut','Haircut + beard + free add-ons • 60 min',60,0,'membership'),
+  ('core','Core Membership Cut','Unlimited haircuts • 30 min',30,0,'membership'),
+  ('plus','Plus Membership Cut','Haircut + beard trim • 30 min',30,0,'membership'),
+  ('premium','Premium Membership Cut','Haircut + beard + free add-ons • 30 min',30,0,'membership'),
   ('haircut','Haircut','One-off appointment • 30 min',30,2000,'one-off'),
-  ('haircut-beard','Haircut + Beard','One-off appointment • 40 min',40,2500,'one-off')
+  ('haircut-beard','Haircut + Beard','One-off appointment • 30 min',30,2500,'one-off')
 on conflict (id) do nothing;
 
 insert into public.addons (id, name, price_pence, extra_min) values
-  ('hot-towel','Hot Towel Treatment',500,10),
-  ('wash-dry','Hair Wash & Dry',500,10),
-  ('mask-steam','Face Mask / Steam',500,10),
-  ('filler','Hairline Filler Spray',500,5)
+  ('hot-towel','Hot Towel Treatment',500,0),
+  ('wash-dry','Hair Wash & Dry',500,0),
+  ('mask-steam','Face Mask / Steam',500,0),
+  ('filler','Hairline Filler Spray',500,0)
 on conflict (id) do nothing;
 
--- Tue-Sat 11:00-21:00 for both barbers
+-- Tue-Sat 11:00-21:00 for both barbers (per-barber hours still to be confirmed)
 insert into public.availability (barber_id, weekday, open_min, close_min)
 select b.id, d, 660, 1260
 from public.barbers b, generate_series(2,6) as d

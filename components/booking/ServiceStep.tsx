@@ -1,14 +1,12 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { addons, services, type Service } from "@/lib/catalog";
-import {
-  addonPrice,
-  formatGBP,
-  getService,
-  type BookingDraft,
-} from "@/lib/booking-shared";
+import type { Service } from "@/lib/catalog";
+import { addonPrice, formatGBP, type BookingDraft } from "@/lib/booking-shared";
+import { useCatalog } from "./catalog-context";
+import { canUseService, useViewer } from "./viewer-context";
 
 type Props = {
   draft: BookingDraft;
@@ -74,10 +72,14 @@ export function radioKeyDown(e: KeyboardEvent<HTMLElement>) {
 }
 
 export default function ServiceStep({ draft, update }: Props) {
-  const selected = getService(draft.serviceId);
+  const { services, addons } = useCatalog();
+  const viewer = useViewer();
+  const isMember = viewer.membership != null;
+  const selected = services.find((s) => s.id === draft.serviceId);
   const membership = services.filter((s) => s.kind === "membership");
   const oneOff = services.filter((s) => s.kind === "one-off");
-  const hasSelection = services.some((s) => s.id === draft.serviceId);
+  const usable = services.filter((s) => canUseService(viewer, s));
+  const hasSelection = usable.some((s) => s.id === draft.serviceId);
 
   const toggleAddon = (id: string) => {
     const set = new Set(draft.addonIds);
@@ -87,22 +89,26 @@ export default function ServiceStep({ draft, update }: Props) {
   };
 
   const renderCard = (s: Service, order: number) => {
-    const checked = draft.serviceId === s.id;
-    const tabbable = checked || (!hasSelection && s.id === services[0].id);
+    const allowed = canUseService(viewer, s);
+    const checked = allowed && draft.serviceId === s.id;
+    const tabbable = checked || (allowed && !hasSelection && s.id === usable[0]?.id);
     const delay = 0.04 * order;
-    return (
+    const card = (
       <motion.button
         key={s.id}
         type="button"
         role="radio"
         aria-checked={checked}
+        disabled={!allowed}
         tabIndex={tabbable ? 0 : -1}
         onClick={() => update({ serviceId: s.id })}
         onKeyDown={radioKeyDown}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: EASE, delay }}
-        className={`${CARD_BASE} ${checked ? CARD_SELECTED : CARD_IDLE}`}
+        className={`${CARD_BASE} ${checked ? CARD_SELECTED : CARD_IDLE} ${
+          allowed ? "" : "opacity-50 cursor-not-allowed hover:bg-white/5"
+        }`}
       >
         <span className="flex items-start justify-between gap-4">
           <span className="text-base md:text-lg font-[500] tracking-[-0.01em]">
@@ -121,16 +127,32 @@ export default function ServiceStep({ draft, update }: Props) {
           <span
             className={`mt-3 block text-xs ${checked ? "text-black/60" : "text-white/40"}`}
           >
-            For active members
+            {allowed ? "Your membership cut" : isMember ? "Members only" : "For active members"}
           </span>
         )}
       </motion.button>
+    );
+    if (allowed || s.kind !== "membership") return card;
+    return (
+      <div key={s.id} className="flex flex-col gap-2">
+        {card}
+        {isMember ? (
+          <p className="text-xs text-white/40">Members only. Your plan is a different cut.</p>
+        ) : (
+          <Link
+            href={`/account/membership?plan=${encodeURIComponent(s.id)}`}
+            className={`self-start min-h-11 inline-flex items-center text-xs tracking-[0.2em] underline underline-offset-4 text-white/60 hover:text-white transition ${FOCUS_RING}`}
+          >
+            JOIN TO UNLOCK
+          </Link>
+        )}
+      </div>
     );
   };
 
   return (
     <section>
-      <StepHeader index={1} title="Choose your cut." body="Pick a membership cut or a one-off." />
+      <StepHeader index={1} title="Choose your cut." body={isMember ? "Your membership cut is included. Or pay for a one-off." : "Pick a one-off, or join to unlock membership cuts."} />
 
       <div role="radiogroup" aria-label="Service" className="space-y-8">
         <div>
