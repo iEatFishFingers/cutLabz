@@ -4,11 +4,12 @@ import { requireAdminAction } from "@/lib/admin/auth";
 import {
   isWithinWindows,
   parseSchedule,
+  pluralPhrase,
   scheduleToRows,
   weekdayOf,
   type ActionResult,
 } from "@/lib/admin/catalog-admin";
-import { listFutureActiveBookings, plural } from "@/components/admin/settings/future-bookings";
+import { listFutureActiveBookings } from "@/components/admin/settings/future-bookings";
 import { revalidateCatalog } from "@/components/admin/settings/revalidate";
 
 const GENERIC = "Could not save hours. Please try again.";
@@ -70,7 +71,11 @@ export async function saveHours(
       (b) => !isWithinWindows(b.start_min, b.end_min, schedule[weekdayOf(b.booking_date)] ?? []),
     ).length;
     if (outside > 0) {
-      warning = `${plural(outside, "upcoming booking falls", "upcoming bookings fall")} outside the new hours and need handling.`;
+      warning = pluralPhrase(
+        outside,
+        "{n} upcoming booking falls outside the new hours and needs handling.",
+        "{n} upcoming bookings fall outside the new hours and need handling.",
+      );
     }
   } catch {
     // Warning is best-effort.

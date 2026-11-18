@@ -4,7 +4,13 @@ import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export type AdminSession = { userId: string; email: string; db: SupabaseClient };
+export type AdminSession = {
+  userId: string;
+  email: string;
+  db: SupabaseClient;
+  /** The barber row linked to this admin login (barbers.user_id), if any. */
+  barberId: string | null;
+};
 
 type Result =
   | { ok: true; session: AdminSession }
@@ -22,15 +28,16 @@ async function check(): Promise<Result> {
     .select("user_id")
     .eq("user_id", user.id)
     .maybeSingle();
-  if (adminErr || !row) {
-    try {
-      await db.auth.signOut();
-    } catch {
-      // best effort; cookie clearing may be impossible during render
-    }
-    return { ok: false, reason: "not-admin" };
-  }
-  return { ok: true, session: { userId: user.id, email: user.email ?? "", db } };
+  if (adminErr || !row) return { ok: false, reason: "not-admin" };
+
+  const { data: barber } = await db
+    .from("barbers")
+    .select("id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  const barberId = typeof barber?.id === "string" ? barber.id : null;
+  return { ok: true, session: { userId: user.id, email: user.email ?? "", db, barberId } };
 }
 
 // Deduplicated per request for Server Components (layout + page).

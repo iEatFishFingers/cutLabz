@@ -258,3 +258,12 @@ drop trigger if exists bookings_enforce_cap on public.bookings;
 create trigger bookings_enforce_cap
   before insert or update of status, booking_date, start_min, user_id on public.bookings
   for each row execute function public.enforce_booking_cap();
+
+-- ---------- Admin QA fixes: status audit + walk-in idempotency ----------
+-- Applied to the live project.
+alter table public.bookings
+  add column if not exists status_changed_at timestamptz,
+  add column if not exists status_changed_by text;
+-- Walk-in/admin bookings (user_id null) are idempotent on request_key too.
+create unique index if not exists bookings_admin_request_key_idx
+  on public.bookings (request_key) where user_id is null and request_key is not null;

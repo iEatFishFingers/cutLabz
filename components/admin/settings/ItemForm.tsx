@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveAddon, saveService } from "@/app/admin/(panel)/services/actions";
 import { LIMITS, type ActionResult } from "@/lib/admin/catalog-admin";
+import { useFieldErrors } from "./use-field-errors";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD, FieldError, INPUT, LABEL, ResultMessage } from "./ui";
 
 export type ItemValues = {
@@ -26,18 +27,34 @@ export default function ItemForm({
 }) {
   const isNew = initial === null;
   const [open, setOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const blank = {
+    name: initial?.name ?? "",
+    description: initial?.description ?? "",
+    price: initial?.price ?? "",
+    durationMin: initial?.durationMin ?? "30",
+    extraMin: initial?.extraMin ?? "0",
+    kind: initial?.kind ?? "one-off",
+    active: initial?.active ?? true,
+  };
+  // Controlled values: React resets uncontrolled fields after a form action, which wiped
+  // the user's input on a validation error.
+  const [vals, setVals] = useState(blank);
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     async (prev, fd) => {
       const r = await (type === "service" ? saveService(prev, fd) : saveAddon(prev, fd));
       if (r.ok && isNew) {
-        setFormKey((k) => k + 1); // reset the blank form
+        setVals(blank); // reset the blank form
         setOpen(false);
       }
       return r;
     },
     null,
   );
+  const { err, clear } = useFieldErrors(result);
+  const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => {
+    setVals((p) => ({ ...p, [k]: v }));
+    clear(k);
+  };
   const uid = `${type}-${initial?.id ?? "new"}`;
   const label = type === "service" ? "service" : "add-on";
 
@@ -52,8 +69,8 @@ export default function ItemForm({
     );
   }
 
-  return (
-    <form key={formKey} action={action} className={CARD}>
+  const form = (
+    <form action={action} className={CARD}>
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
@@ -65,10 +82,11 @@ export default function ItemForm({
             name="name"
             required
             maxLength={type === "service" ? LIMITS.serviceName : LIMITS.addonName}
-            defaultValue={initial?.name ?? ""}
+            value={vals.name}
+            onChange={(e) => set("name", e.target.value)}
             className={INPUT}
           />
-          <FieldError result={result} name="name" />
+          <FieldError message={err("name")} />
         </div>
 
         {type === "service" ? (
@@ -80,10 +98,11 @@ export default function ItemForm({
               id={`${uid}-desc`}
               name="description"
               maxLength={LIMITS.description}
-              defaultValue={initial?.description ?? ""}
+              value={vals.description}
+              onChange={(e) => set("description", e.target.value)}
               className={INPUT}
             />
-            <FieldError result={result} name="description" />
+            <FieldError message={err("description")} />
           </div>
         ) : null}
 
@@ -97,10 +116,11 @@ export default function ItemForm({
             inputMode="decimal"
             required
             placeholder="25.00"
-            defaultValue={initial?.price ?? ""}
+            value={vals.price}
+            onChange={(e) => set("price", e.target.value)}
             className={INPUT}
           />
-          <FieldError result={result} name="price" />
+          <FieldError message={err("price")} />
         </div>
 
         {type === "service" ? (
@@ -114,10 +134,11 @@ export default function ItemForm({
                 name="durationMin"
                 inputMode="numeric"
                 required
-                defaultValue={initial?.durationMin ?? "30"}
+                value={vals.durationMin}
+                onChange={(e) => set("durationMin", e.target.value)}
                 className={INPUT}
               />
-              <FieldError result={result} name="durationMin" />
+              <FieldError message={err("durationMin")} />
             </div>
             <div>
               <label htmlFor={`${uid}-kind`} className={LABEL}>
@@ -126,13 +147,14 @@ export default function ItemForm({
               <select
                 id={`${uid}-kind`}
                 name="kind"
-                defaultValue={initial?.kind ?? "one-off"}
+                value={vals.kind}
+                onChange={(e) => set("kind", e.target.value)}
                 className={INPUT}
               >
                 <option value="one-off">One-off</option>
                 <option value="membership">Membership</option>
               </select>
-              <FieldError result={result} name="kind" />
+              <FieldError message={err("kind")} />
             </div>
           </>
         ) : (
@@ -145,19 +167,21 @@ export default function ItemForm({
               name="extraMin"
               inputMode="numeric"
               required
-              defaultValue={initial?.extraMin ?? "0"}
+              value={vals.extraMin}
+              onChange={(e) => set("extraMin", e.target.value)}
               className={INPUT}
             />
-            <FieldError result={result} name="extraMin" />
+            <FieldError message={err("extraMin")} />
           </div>
         )}
 
-        <label className="flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-white/60">
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 py-2 text-xs uppercase tracking-[0.2em] text-white/60">
           <input
             type="checkbox"
             name="active"
-            defaultChecked={initial?.active ?? true}
-            className="h-4 w-4 accent-white"
+            checked={vals.active}
+            onChange={(e) => set("active", e.target.checked)}
+            className="h-5 w-5 accent-white"
           />
           Active
         </label>
@@ -175,5 +199,27 @@ export default function ItemForm({
       </div>
       <ResultMessage result={result} />
     </form>
+  );
+
+  if (isNew || type !== "service" || !initial) return form;
+
+  // Existing services collapse into an accordion. The form stays mounted while closed,
+  // so unsaved edits survive toggling.
+  return (
+    <details className="group bg-[#111] border border-white/10">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-6 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 break-words text-sm text-white">{initial.name}</span>
+        <span className="text-xs text-white/50">
+          £{initial.price} · {initial.durationMin} min ·{" "}
+          <span className={initial.active ? "text-green-400" : "text-white/40"}>
+            {initial.active ? "Active" : "Inactive"}
+          </span>
+          <span aria-hidden="true" className="ml-3 inline-block transition group-open:rotate-90">
+            ›
+          </span>
+        </span>
+      </summary>
+      <div className="border-t border-white/10 [&>form]:border-0">{form}</div>
+    </details>
   );
 }

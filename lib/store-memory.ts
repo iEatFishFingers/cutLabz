@@ -44,9 +44,8 @@ export async function insertBooking(
   b: Omit<Booking, "id" | "createdAt" | "reference">,
 ): Promise<Booking | "conflict" | "limit" | "duplicate"> {
   if (
-    b.userId &&
     b.requestKey &&
-    bookings.some((x) => x.userId === b.userId && x.requestKey === b.requestKey)
+    bookings.some((x) => (x.userId ?? null) === (b.userId ?? null) && x.requestKey === b.requestKey)
   )
     return "duplicate";
   if (isActiveStatus(b.status) && atCap(b.userId, null)) return "limit";
@@ -82,10 +81,10 @@ export async function listActiveBookingsForUser(
 }
 
 export async function findBookingByRequestKey(
-  userId: string,
+  userId: string | null,
   requestKey: string,
 ): Promise<Booking | null> {
-  const b = bookings.find((x) => x.userId === userId && x.requestKey === requestKey);
+  const b = bookings.find((x) => (x.userId ?? null) === userId && x.requestKey === requestKey);
   return b ? { ...b } : null;
 }
 

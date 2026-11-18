@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { addDays, formatDate, isValidDateString } from "@/lib/booking-shared";
-import type { View } from "@/lib/admin/bookings-shared";
+import { isValidDateString } from "@/lib/booking-shared";
+import { shiftDate, type View } from "@/lib/admin/bookings-shared";
+import { PlusIcon } from "../icons";
+import { longDateWithYear } from "./clash";
 
 const BTN =
   "inline-flex min-h-11 items-center justify-center px-4 text-xs tracking-[0.2em] uppercase border border-white/20 hover:bg-white hover:text-black transition";
+const BTN_PRIMARY =
+  "inline-flex min-h-11 items-center justify-center gap-2 px-4 text-xs tracking-[0.2em] uppercase bg-white text-black font-semibold hover:bg-white/85 transition";
 const BTN_ON = "inline-flex min-h-11 items-center justify-center px-4 text-xs tracking-[0.2em] uppercase bg-white text-black";
 
 export default function DateNav({
@@ -26,13 +30,13 @@ export default function DateNav({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={href(addDays(date, -step))} className={BTN} aria-label="Previous">
+        <Link href={href(shiftDate(date, -step))} className={BTN} aria-label="Previous">
           Prev
         </Link>
         <Link href={href(null)} className={isToday && view === "day" ? BTN_ON : BTN}>
           Today
         </Link>
-        <Link href={href(addDays(date, step))} className={BTN} aria-label="Next">
+        <Link href={href(shiftDate(date, step))} className={BTN} aria-label="Next">
           Next
         </Link>
         <input
@@ -47,7 +51,7 @@ export default function DateNav({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs tracking-[0.2em] uppercase text-white/50">
-          {formatDate(date, { long: true })}
+          {longDateWithYear(date)}
         </p>
         <div className="flex gap-2">
           <Link href={href(date, "day")} className={view === "day" ? BTN_ON : BTN}>
@@ -56,7 +60,8 @@ export default function DateNav({
           <Link href={href(date, "week")} className={view === "week" ? BTN_ON : BTN}>
             Week
           </Link>
-          <Link href={`/admin/bookings/new?date=${date}`} className={BTN}>
+          <Link href={`/admin/bookings/new?date=${date}`} className={BTN_PRIMARY}>
+            <PlusIcon />
             New booking
           </Link>
         </div>

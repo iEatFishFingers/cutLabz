@@ -184,10 +184,14 @@ export function formatDate(date: string, opts?: { long?: boolean }): string {
 
 export const LIMITS = { name: 80, email: 254, phone: 20, notes: 500 } as const;
 
+/** Bidirectional-control characters that can visually reorder text around a name. */
+const BIDI_RE = /[‪-‮⁦-⁩‎‏]/g;
+export const stripBidi = (s: string): string => s.replace(BIDI_RE, "");
+
 /** Name/phone/notes only: the server uses the signed-in account email instead. */
 export function validateContact(d: Pick<BookingDraft, "name" | "phone" | "notes">): FieldErrors {
   const e: FieldErrors = {};
-  const name = d.name.trim();
+  const name = stripBidi(d.name).trim();
   const phoneDigits = d.phone.replace(/[\s()+-]/g, "");
   if (name.length < 2) e.name = "Enter your name.";
   else if (name.length > LIMITS.name) e.name = `Max ${LIMITS.name} characters.`;

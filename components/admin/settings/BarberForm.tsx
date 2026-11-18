@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { saveBarber } from "@/app/admin/(panel)/barbers/actions";
+import { deleteBarberAction, saveBarber } from "@/app/admin/(panel)/barbers/actions";
+import ConfirmDelete from "./ConfirmDelete";
+import { useFieldErrors } from "./use-field-errors";
 import { LIMITS, type ActionResult } from "@/lib/admin/catalog-admin";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD, FieldError, INPUT, LABEL, ResultMessage } from "./ui";
 
@@ -18,18 +20,28 @@ export type BarberValues = {
 export default function BarberForm({ initial }: { initial: BarberValues | null }) {
   const isNew = initial === null;
   const [open, setOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const blank = {
+    name: initial?.name ?? "",
+    role: initial?.role ?? "",
+    active: initial?.active ?? true,
+  };
+  const [vals, setVals] = useState(blank);
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     async (prev, fd) => {
       const r = await saveBarber(prev, fd);
       if (r.ok && isNew) {
-        setFormKey((k) => k + 1);
+        setVals(blank);
         setOpen(false);
       }
       return r;
     },
     null,
   );
+  const { err, clear } = useFieldErrors(result);
+  const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => {
+    setVals((p) => ({ ...p, [k]: v }));
+    clear(k);
+  };
   const uid = `barber-${initial?.id ?? "new"}`;
 
   if (isNew && !open) {
@@ -44,7 +56,7 @@ export default function BarberForm({ initial }: { initial: BarberValues | null }
   }
 
   return (
-    <form key={formKey} action={action} className={CARD}>
+    <form action={action} className={CARD}>
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
@@ -56,10 +68,11 @@ export default function BarberForm({ initial }: { initial: BarberValues | null }
             name="name"
             required
             maxLength={LIMITS.barberName}
-            defaultValue={initial?.name ?? ""}
+            value={vals.name}
+            onChange={(e) => set("name", e.target.value)}
             className={INPUT}
           />
-          <FieldError result={result} name="name" />
+          <FieldError message={err("name")} />
         </div>
         <div>
           <label htmlFor={`${uid}-role`} className={LABEL}>
@@ -69,17 +82,19 @@ export default function BarberForm({ initial }: { initial: BarberValues | null }
             id={`${uid}-role`}
             name="role"
             maxLength={LIMITS.barberRole}
-            defaultValue={initial?.role ?? ""}
+            value={vals.role}
+            onChange={(e) => set("role", e.target.value)}
             className={INPUT}
           />
-          <FieldError result={result} name="role" />
+          <FieldError message={err("role")} />
         </div>
-        <label className="flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-white/60">
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 py-2 text-xs uppercase tracking-[0.2em] text-white/60">
           <input
             type="checkbox"
             name="active"
-            defaultChecked={initial?.active ?? true}
-            className="h-4 w-4 accent-white"
+            checked={vals.active}
+            onChange={(e) => set("active", e.target.checked)}
+            className="h-5 w-5 accent-white"
           />
           Active
         </label>
@@ -116,6 +131,11 @@ export default function BarberForm({ initial }: { initial: BarberValues | null }
         ) : null}
       </div>
       <ResultMessage result={result} />
+      {initial && initial.futureBookings === 0 ? (
+        <div className="mt-6 border-t border-white/10 pt-4">
+          <ConfirmDelete id={initial.id} noun="barber" onDelete={deleteBarberAction} />
+        </div>
+      ) : null}
     </form>
   );
 }

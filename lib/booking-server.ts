@@ -30,6 +30,7 @@ import {
   isValidDateString,
   quote,
   REQUEST_KEY_RE,
+  stripBidi,
   validateContact,
   type ConfirmedBooking,
   type CreateBookingResult,
@@ -162,7 +163,7 @@ export async function getSlots(
   return { ok: true, slots: computeSlots({ date, durationMin, barberId, bookings, now, catalog }) };
 }
 
-const normaliseSpaces = (s: string) => s.trim().replace(/\s+/g, " ");
+const normaliseSpaces = (s: string) => stripBidi(s).trim().replace(/\s+/g, " ");
 
 const LIMIT_RESULT = {
   ok: false,
@@ -290,7 +291,7 @@ export async function createBooking(
       name: normaliseSpaces(details.name),
       email: viewer.email.trim().toLowerCase(),
       phone: normaliseSpaces(details.phone),
-      notes: details.notes.trim(),
+      notes: stripBidi(details.notes).trim(),
       totalGBP,
       userId: viewer.userId,
       membershipId: memberCut ? viewer.membership?.id ?? null : null,

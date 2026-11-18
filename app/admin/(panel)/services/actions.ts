@@ -103,6 +103,50 @@ export async function saveService(
   return { ok: true, message: "Service saved." };
 }
 
+const MEMBERSHIP_PLAN_IDS: readonly string[] = ["core", "plus", "premium"];
+
+/** Deletes a service only when no booking or membership references it. */
+export async function deleteServiceAction(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { db } = await requireAdminAction();
+  if (typeof id !== "string" || !id || id.length > 64) return { ok: false, error: "Invalid request." };
+  if (MEMBERSHIP_PLAN_IDS.includes(id)) {
+    return { ok: false, error: "Membership plans can't be deleted. Deactivate it instead." };
+  }
+
+  const { data: existing, error: exErr } = await db
+    .from("services")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if (exErr) return { ok: false, error: GENERIC };
+  if (!existing) return { ok: false, error: "Service not found." };
+
+  const [bk, mem] = await Promise.all([
+    db.from("bookings").select("id", { count: "exact", head: true }).eq("service_id", id),
+    db.from("memberships").select("id", { count: "exact", head: true }).eq("plan", id),
+  ]);
+  if (bk.error || mem.error) return { ok: false, error: GENERIC };
+  if ((bk.count ?? 0) > 0) {
+    return { ok: false, error: "This service has bookings, so it can only be deactivated." };
+  }
+  if ((mem.count ?? 0) > 0) {
+    return { ok: false, error: "This service has memberships, so it can only be deactivated." };
+  }
+
+  const { error } = await db.from("services").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") {
+      return { ok: false, error: "This service is in use, so it can only be deactivated." };
+    }
+    console.error("services delete failed", error.code, error.message);
+    return { ok: false, error: GENERIC };
+  }
+  revalidateCatalog("/admin/services");
+  return { ok: true };
+}
+
 export async function saveAddon(
   _prev: ActionResult | null,
   fd: FormData,

@@ -204,17 +204,16 @@ export async function listActiveBookingsForUser(
 
 /** The user's booking created with this idempotency key, if any (any status). */
 export async function findBookingByRequestKey(
-  userId: string,
+  userId: string | null,
   requestKey: string,
 ): Promise<Booking | null> {
   if ((await backend()) === "memory") {
     return (await import("./store-memory")).findBookingByRequestKey(userId, requestKey);
   }
   const { getSupabaseAdmin } = await import("./supabase/admin");
-  const { data, error } = await getSupabaseAdmin()
-    .from("bookings")
-    .select(FULL_COLUMNS)
-    .eq("user_id", userId)
+  // userId null = walk-in/admin bookings (user_id IS NULL).
+  const base = getSupabaseAdmin().from("bookings").select(FULL_COLUMNS);
+  const { data, error } = await (userId === null ? base.is("user_id", null) : base.eq("user_id", userId))
     .eq("request_key", requestKey)
     .maybeSingle();
   if (error) {

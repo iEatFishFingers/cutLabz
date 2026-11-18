@@ -21,6 +21,7 @@ export type BarberHours = {
   schedule: WeekSchedule;
 };
 
+const DEFAULT_WINDOW: TimeWindow = { open: 660, close: 1260 };
 const TIMES = Array.from({ length: 97 }, (_, i) => i * 15);
 const clone = (s: WeekSchedule): WeekSchedule =>
   Object.fromEntries(
@@ -62,9 +63,12 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
   );
   const [selected, setSelected] = useState(barbers[0].id);
   const [copyFrom, setCopyFrom] = useState<number | null>(null);
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
+  const [justOpened, setJustOpened] = useState<string[]>([]);
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     async (prev, fd) => {
       const r = await saveHours(prev, fd);
+      setConfirmFor(null);
       if (r.ok) {
         const id = String(fd.get("barberId"));
         setSaved((s) => ({ ...s, [id]: String(fd.get("schedule")) }));
@@ -83,6 +87,10 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
 
   const dayErrors = WEEK_ORDER.map((wd) => validateWindows(schedule[wd] ?? []));
   const hasError = dayErrors.some(Boolean);
+  const allClosed = WEEK_ORDER.every((wd) => (schedule[wd] ?? []).length === 0);
+  const confirmKey = `${selected}:${serialized}`;
+  const confirming = allClosed && confirmFor === confirmKey;
+  const selectedName = barbers.find((b) => b.id === selected)?.name ?? "this barber";
   const others = barbers.filter((b) => b.id !== selected);
 
   const copyDay = (from: number) => {
@@ -118,7 +126,7 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
           >
             {b.name}
             {b.active ? "" : " (inactive)"}
-            {dirty(b.id) ? " *" : ""}
+            {dirty(b.id) ? " (unsaved)" : ""}
           </button>
         ))}
       </div>
@@ -133,22 +141,25 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
             const closed = windows.length === 0;
             return (
               <li key={wd} className="py-4 first:pt-0 last:pb-0">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.2em] text-white/60">
-                    {WEEKDAY_NAMES[wd]}
-                  </p>
-                  <label className="flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-white/60">
+                <label className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-white/60">
+                  <span>{WEEKDAY_NAMES[wd]}</span>
+                  <span className="flex items-center gap-3">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-white"
+                      className="h-5 w-5 accent-white"
                       checked={!closed}
-                      onChange={(e) =>
-                        setDay(wd, e.target.checked ? [{ open: 660, close: 1260 }] : [])
-                      }
+                      onChange={(e) => {
+                        setDay(wd, e.target.checked ? [{ ...DEFAULT_WINDOW }] : []);
+                        setJustOpened((j) => {
+                          const k = `${selected}-${wd}`;
+                          const rest = j.filter((x) => x !== k);
+                          return e.target.checked ? [...rest, k] : rest;
+                        });
+                      }}
                     />
                     Open
-                  </label>
-                </div>
+                  </span>
+                </label>
 
                 {closed ? (
                   <p className="mt-1 text-sm text-white/30">Closed</p>
@@ -191,6 +202,16 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
                     ))}
                   </div>
                 )}
+
+                {!closed &&
+                justOpened.includes(`${selected}-${wd}`) &&
+                windows.length === 1 &&
+                windows[0].open === DEFAULT_WINDOW.open &&
+                windows[0].close === DEFAULT_WINDOW.close ? (
+                  <p className="mt-2 text-xs text-white/50">
+                    Opens 11:00-21:00 by default, change below
+                  </p>
+                ) : null}
 
                 {dayErrors[i] ? (
                   <p role="alert" className="mt-2 text-xs text-red-400">
@@ -246,9 +267,44 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
         </ul>
 
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-white/10 pt-6">
-          <button type="submit" disabled={pending || hasError} className={BTN_PRIMARY}>
-            {pending ? "Saving..." : "Save hours"}
-          </button>
+          {confirming ? (
+            <div className="w-full border border-red-400/30 bg-[#0a0a0a] p-3">
+              <p className="text-sm text-white/70">
+                Every day is closed, so nobody can book {selectedName} online. Save anyway?
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="submit" disabled={pending} className={BTN_PRIMARY}>
+                  {pending ? "Saving..." : "Yes, save"}
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className={BTN_SECONDARY}
+                  onClick={() => setConfirmFor(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : allClosed ? (
+            <button
+              type="button"
+              disabled={pending || hasError}
+              className={BTN_PRIMARY}
+              onClick={() => setConfirmFor(confirmKey)}
+            >
+              Save hours
+            </button>
+          ) : (
+            <button type="submit" disabled={pending || hasError} className={BTN_PRIMARY}>
+              {pending ? "Saving..." : "Save hours"}
+            </button>
+          )}
+          {dirty(selected) ? (
+            <span className="border border-amber-400/50 px-2 py-1 text-xs uppercase tracking-[0.2em] text-amber-300">
+              Unsaved changes
+            </span>
+          ) : null}
           {others.map((b) => (
             <button
               key={b.id}
@@ -262,7 +318,7 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
         </div>
         <p className="mt-3 text-xs text-white/40">
           Copying to another barber fills their draft and switches to them; press Save there to
-          apply. An asterisk marks unsaved changes.
+          apply. Barbers with unsaved changes are marked (unsaved).
         </p>
         <ResultMessage result={result} />
       </form>

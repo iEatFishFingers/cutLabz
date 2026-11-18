@@ -18,7 +18,13 @@ export default function NextUp({
             <li key={b.id} className="min-w-0 text-sm">
               <span className="text-white/50">{b.name}</span>
               <span className="block truncate">
-                {n ? `${formatTime(n.startMin)} · ${n.name} · ${n.serviceName}` : "Nothing else today"}
+                {n ? (
+                  <>
+                    {formatTime(n.startMin)} · <bdi>{n.name}</bdi> · {n.serviceName}
+                  </>
+                ) : (
+                  "Nothing else today"
+                )}
               </span>
             </li>
           );

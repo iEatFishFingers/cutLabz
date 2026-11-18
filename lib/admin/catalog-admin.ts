@@ -114,8 +114,14 @@ export function parseSchedule(
   const schedule: WeekSchedule = {};
   for (let wd = 0; wd <= 6; wd++) {
     const list = obj[String(wd)] ?? [];
-    if (!Array.isArray(list) || list.length > MAX_WINDOWS_PER_DAY) {
+    if (!Array.isArray(list)) {
       return { ok: false, error: `${WEEKDAY_NAMES[wd]}: invalid windows.` };
+    }
+    if (list.length > MAX_WINDOWS_PER_DAY) {
+      return {
+        ok: false,
+        error: `${WEEKDAY_NAMES[wd]}: At most ${MAX_WINDOWS_PER_DAY} opening windows per day.`,
+      };
     }
     const windows: TimeWindow[] = [];
     for (const w of list) {
@@ -231,10 +237,62 @@ export function cleanText(
   opts?: { allowEmpty?: boolean },
 ): string | null {
   if (typeof v !== "string") return null;
-  const t = v.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  const t = v
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/[‪-‮⁦-⁩‎‏]/g, "")
+    .trim();
   if (t.length > max) return null;
   if (t.length === 0 && !opts?.allowEmpty) return null;
   return t;
+}
+
+/** Whole phrase by count; `{n}` in the template is replaced by the number. */
+export function pluralPhrase(n: number, one: string, many: string): string {
+  return (n === 1 ? one : many).replace("{n}", String(n));
+}
+
+/* ---------- time off sanity ---------- */
+
+export const TIME_OFF_MAX_DAYS = 366;
+export const TIME_OFF_MAX_START_YEARS = 2;
+export const TIME_OFF_MAX_END_YEARS = 3;
+
+const dayNumber = (d: string) => {
+  const [y, m, dd] = d.split("-").map(Number);
+  return Date.UTC(y, m - 1, dd) / 86_400_000;
+};
+
+/** Same calendar day `years` ahead (29 Feb falls back to 28 Feb). */
+function plusYears(date: string, years: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(Date.UTC(y + years, m - 1, d));
+  if (dt.getUTCMonth() !== m - 1) dt.setUTCDate(0);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Returns a field error for a time-off range, or null. Dates must be valid
+ *  YYYY-MM-DD with end >= start; `today` is the shop-local date. */
+export function validateTimeOffRange(
+  start: string,
+  end: string,
+  today: string,
+): { field: "startDate" | "endDate"; error: string } | null {
+  if (dayNumber(end) - dayNumber(start) + 1 > TIME_OFF_MAX_DAYS) {
+    return { field: "endDate", error: `Time off can be at most ${TIME_OFF_MAX_DAYS} days long.` };
+  }
+  if (start > plusYears(today, TIME_OFF_MAX_START_YEARS)) {
+    return {
+      field: "startDate",
+      error: `Time off can't start more than ${TIME_OFF_MAX_START_YEARS} years from now.`,
+    };
+  }
+  if (end > plusYears(today, TIME_OFF_MAX_END_YEARS)) {
+    return {
+      field: "endDate",
+      error: `Time off can't end more than ${TIME_OFF_MAX_END_YEARS} years from now.`,
+    };
+  }
+  return null;
 }
 
 /** Strict integer from a form string (digits only, 1-6 chars). */

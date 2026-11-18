@@ -38,7 +38,7 @@ export default function WeekView({
               {day.map((b) => (
                 <li key={b.id} className="flex gap-2">
                   <span className="shrink-0 text-white/50">{formatTime(b.startMin)}</span>
-                  <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                  <span className="min-w-0 flex-1 truncate"><bdi>{b.name}</bdi></span>
                   <span className="shrink-0 text-white/50">{initialsOf(b.barberId)}</span>
                 </li>
               ))}

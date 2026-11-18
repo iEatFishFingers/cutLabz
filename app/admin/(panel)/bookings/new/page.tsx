@@ -2,22 +2,23 @@ import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { parseDateParam } from "@/lib/admin/bookings-shared";
 import { shopNow } from "@/lib/booking-shared";
-import { loadCatalog } from "@/lib/catalog-db";
+import { loadAdminCatalog } from "@/lib/catalog-db";
 import NewBookingForm from "@/components/admin/bookings/NewBookingForm";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 async function NewBooking({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  await requireAdmin();
+  const session = await requireAdmin();
   const now = shopNow();
-  const catalog = await loadCatalog();
+  const catalog = await loadAdminCatalog();
   const barberParam = typeof sp.barber === "string" ? sp.barber : "";
   const startParam = typeof sp.start === "string" && /^\d{1,4}$/.test(sp.start) ? Number(sp.start) : null;
   return (
     <NewBookingForm
       catalog={catalog}
       now={now}
+      defaultBarberId={session.barberId}
       initial={{
         date: parseDateParam(sp.date, now.date),
         barberId: catalog.barbers.some((b) => b.id === barberParam) ? barberParam : "",

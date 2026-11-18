@@ -41,6 +41,10 @@ export type AdminBooking = {
   status: BookingStatus | "unknown";
   statusRaw: string;
   paymentStatus: string;
+  /** ISO timestamp of the last admin status change (null if never changed). */
+  statusChangedAt: string | null;
+  /** Email of the admin who made it. */
+  statusChangedBy: string | null;
 };
 
 export const statusLabel = (b: Pick<AdminBooking, "status" | "statusRaw">): string =>
@@ -56,6 +60,10 @@ export type AdminBarber = {
 
 export const STEP = 15;
 export const ROW_MIN = 30;
+/** Calendar scale: px per minute (30-min booking = 60px). Keep DayBoard in sync via this. */
+export const PX = 2;
+/** Shortest rendered tile (tap target). */
+export const MIN_TILE_PX = 44;
 
 export type View = "day" | "week";
 
@@ -63,9 +71,33 @@ export function parseView(v: string | string[] | undefined): View {
   return v === "week" ? "week" : "day";
 }
 
-/** Returns a valid date from a search param, else the fallback. */
+export const MIN_DATE = "2000-01-01";
+export const MAX_DATE = "2100-12-31";
+
+/** A real date inside the supported 2000-2100 range. */
+export const isSupportedDate = (v: unknown): v is string =>
+  typeof v === "string" && isValidDateString(v) && v >= MIN_DATE && v <= MAX_DATE;
+
+/** Clamps any YYYY-MM-DD into the supported range. */
+export const clampDate = (d: string): string => (d < MIN_DATE ? MIN_DATE : d > MAX_DATE ? MAX_DATE : d);
+
+/** `addDays` that can never leave the supported range (safe for Next/Prev links). */
+export const shiftDate = (date: string, n: number): string =>
+  clampDate(addDays(clampDate(date), n));
+
+/** Returns a valid date (years 2000-2100) from a search param, else the fallback. */
 export function parseDateParam(v: string | string[] | undefined, fallback: string): string {
-  return typeof v === "string" && isValidDateString(v) ? v : fallback;
+  return isSupportedDate(v) ? v : fallback;
+}
+
+/** Like parseDateParam; `fellBack` is true only when a value WAS supplied but was invalid/out of range. */
+export function parseDateParamChecked(
+  raw: unknown,
+  fallback: string = MIN_DATE,
+): { date: string; fellBack: boolean } {
+  if (isSupportedDate(raw)) return { date: raw, fellBack: false };
+  const supplied = Array.isArray(raw) ? raw.length > 0 : raw !== undefined && raw !== null && raw !== "";
+  return { date: fallback, fellBack: supplied };
 }
 
 /** Mon-Sun dates of the week containing `date`. */

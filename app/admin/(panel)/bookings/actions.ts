@@ -2,18 +2,39 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdminAction } from "@/lib/admin/auth";
-import { changeBookingStatus, createAdminBooking } from "@/lib/admin/bookings";
-import type { AdminActionResult, NewBookingState } from "@/lib/admin/bookings-shared";
-import { loadCatalog } from "@/lib/catalog-db";
+import {
+  changeBookingStatus,
+  createAdminBooking,
+  searchAdminBookings,
+} from "@/lib/admin/bookings";
+import type {
+  AdminActionResult,
+  AdminBooking,
+  NewBookingState,
+} from "@/lib/admin/bookings-shared";
+import { loadAdminCatalog } from "@/lib/catalog-db";
 
+/** `expected` is the status the UI believes the booking has; a mismatch is refused as stale. */
 export async function setBookingStatusAction(
   id: string,
   status: string,
+  expected: string,
 ): Promise<AdminActionResult> {
   const session = await requireAdminAction();
-  const res = await changeBookingStatus(session, id, status);
+  const res = await changeBookingStatus(session, id, status, expected);
   if (res.ok) revalidatePath("/admin");
   return res;
+}
+
+export async function searchBookingsAction(
+  query: string,
+): Promise<{ ok: true; bookings: AdminBooking[] } | { ok: false; error: string }> {
+  const session = await requireAdminAction();
+  try {
+    return { ok: true, bookings: await searchAdminBookings(session, query) };
+  } catch {
+    return { ok: false, error: "Could not search bookings." };
+  }
 }
 
 export async function createBookingAction(
@@ -36,8 +57,9 @@ export async function createBookingAction(
       email: get("email"),
       notes: get("notes"),
       overrideHours: get("overrideHours") === "on",
+      requestKey: get("requestKey"),
     },
-    await loadCatalog(),
+    await loadAdminCatalog(),
   );
   if (res.ok) revalidatePath("/admin");
   return res;

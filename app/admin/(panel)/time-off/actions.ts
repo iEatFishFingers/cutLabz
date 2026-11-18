@@ -1,8 +1,15 @@
 "use server";
 
 import { requireAdminAction } from "@/lib/admin/auth";
-import { cleanText, isDateString, LIMITS, type ActionResult } from "@/lib/admin/catalog-admin";
-import { plural } from "@/components/admin/settings/future-bookings";
+import {
+  cleanText,
+  isDateString,
+  LIMITS,
+  pluralPhrase,
+  validateTimeOffRange,
+  type ActionResult,
+} from "@/lib/admin/catalog-admin";
+import { shopNow } from "@/lib/booking-shared";
 import { revalidateCatalog } from "@/components/admin/settings/revalidate";
 
 export async function addTimeOff(
@@ -24,6 +31,9 @@ export async function addTimeOff(
   if (!isDateString(end)) fieldErrors.endDate = "Enter a valid end date.";
   if (isDateString(start) && isDateString(end) && end < start) {
     fieldErrors.endDate = "End date must be on or after the start date.";
+  } else if (isDateString(start) && isDateString(end)) {
+    const range = validateTimeOffRange(start, end, shopNow().date);
+    if (range) fieldErrors[range.field] = range.error;
   }
   if (reason === null) fieldErrors.reason = `Reason must be ${LIMITS.reason} characters or fewer.`;
   if (Object.keys(fieldErrors).length > 0) {
@@ -60,7 +70,11 @@ export async function addTimeOff(
     .gte("booking_date", start as string)
     .lte("booking_date", end as string);
   if (count && count > 0) {
-    warning = `${plural(count, "booking overlaps", "bookings overlap")} this time off. Handle them in the bookings calendar.`;
+    warning = pluralPhrase(
+      count,
+      "{n} booking overlaps this time off. Handle it in the bookings calendar.",
+      "{n} bookings overlap this time off. Handle them in the bookings calendar.",
+    );
   }
   return { ok: true, message: "Time off added.", warning };
 }

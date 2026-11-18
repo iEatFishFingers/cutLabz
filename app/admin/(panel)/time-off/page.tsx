@@ -51,7 +51,7 @@ async function TimeOffContent() {
       <p className="text-xs text-white/40">
         Time off blocks new online bookings only. Existing bookings are not cancelled; review them
         in{" "}
-        <Link href="/admin" className="underline hover:text-white">
+        <Link href="/admin" className="inline-flex min-h-11 items-center underline hover:text-white">
           the bookings calendar
         </Link>
         .

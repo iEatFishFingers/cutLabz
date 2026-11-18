@@ -34,8 +34,9 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     .eq("user_id", data.user.id)
     .maybeSingle();
   if (adminErr || !row) {
+    // They just authenticated here; sign out and don't reveal that the account exists.
     await db.auth.signOut();
-    return { error: "This account doesn't have admin access." };
+    return { error: GENERIC };
   }
   redirect("/admin");
 }

@@ -35,8 +35,8 @@ export function ResultMessage({ result }: { result: ActionResult | null }) {
   );
 }
 
-export function FieldError({ result, name }: { result: ActionResult | null; name: string }) {
-  const msg = result && !result.ok ? result.fieldErrors?.[name] : undefined;
+export function FieldError({ message }: { message?: string }) {
+  const msg = message;
   if (!msg) return null;
   return <p className="mt-2 text-xs text-red-400">{msg}</p>;
 }

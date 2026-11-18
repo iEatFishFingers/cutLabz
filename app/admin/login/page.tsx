@@ -15,7 +15,7 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ [k
       <div className="w-full max-w-sm bg-[#0a0a0a] border border-white/10 p-6 sm:p-8">
         <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Admin</p>
         <h1 className="text-2xl font-semibold mt-1 mb-8">Cut Labz</h1>
-        <Suspense fallback={<LoginForm />}>
+        <Suspense fallback={<LoginForm idPrefix="login-fallback" inert />}>
           <LoginGate searchParams={searchParams} />
         </Suspense>
       </div>

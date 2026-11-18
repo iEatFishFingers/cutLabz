@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { deleteTimeOff } from "@/app/admin/(panel)/time-off/actions";
 import Link from "next/link";
 import type { ActionResult } from "@/lib/admin/catalog-admin";
-import { BTN_SECONDARY, CARD, ResultMessage } from "./ui";
+import { BTN_PRIMARY, BTN_SECONDARY, CARD, ResultMessage } from "./ui";
 
 export type TimeOffRow = {
   id: number;
@@ -30,6 +30,7 @@ function formatDate(date: string): string {
 }
 
 function Row({ row }: { row: TimeOffRow }) {
+  const [confirming, setConfirming] = useState(false);
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     deleteTimeOff,
     null,
@@ -51,19 +52,39 @@ function Row({ row }: { row: TimeOffRow }) {
             <p className="mt-1 text-xs text-red-400">
               {row.overlapping} {row.overlapping === 1 ? "booking overlaps" : "bookings overlap"}{" "}
               this time off and need handling.{" "}
-              <Link href={`/admin?date=${row.start}`} className="underline">
+              <Link href={`/admin?date=${row.start}`} className="inline-flex min-h-11 items-center underline">
                 View calendar
               </Link>
             </p>
           ) : null}
         </div>
-        <form action={action}>
-          <input type="hidden" name="id" value={row.id} />
-          <button type="submit" disabled={pending} className={BTN_SECONDARY}>
-            {pending ? "Removing..." : "Delete"}
+        {confirming ? null : (
+          <button type="button" className={BTN_SECONDARY} onClick={() => setConfirming(true)}>
+            Delete
           </button>
-        </form>
+        )}
       </div>
+      {confirming ? (
+        <form action={action} className="mt-3 border border-white/10 bg-[#0a0a0a] p-3">
+          <input type="hidden" name="id" value={row.id} />
+          <p className="text-sm text-white/70">
+            Remove this time off? Customers will be able to book those days again.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="submit" disabled={pending} className={BTN_PRIMARY}>
+              {pending ? "Removing..." : "Yes, remove"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              className={BTN_SECONDARY}
+              onClick={() => setConfirming(false)}
+            >
+              Keep
+            </button>
+          </div>
+        </form>
+      ) : null}
       {result && !result.ok ? <ResultMessage result={result} /> : null}
     </li>
   );

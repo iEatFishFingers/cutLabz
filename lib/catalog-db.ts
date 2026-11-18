@@ -34,7 +34,22 @@ function must(
   return res.data as Row[];
 }
 
+/** Drops barbers with no availability rows at all (never bookable by customers). */
+export function withoutHourlessBarbers<T extends { barbers: CatalogBarber[] }>(c: T): T {
+  return { ...c, barbers: c.barbers.filter((b) => Object.keys(b.hours).length > 0) };
+}
+
+/** Customer-facing catalog: barbers without any opening hours are excluded. */
 export async function loadCatalog(): Promise<ServerCatalog> {
+  return withoutHourlessBarbers(await loadCatalogAll());
+}
+
+/** Admin tools: every active barber, even one that has no hours yet. */
+export async function loadAdminCatalog(): Promise<ServerCatalog> {
+  return loadCatalogAll();
+}
+
+async function loadCatalogAll(): Promise<ServerCatalog> {
   if (!hasSupabaseEnv()) {
     if (process.env.NODE_ENV !== "production") return seedCatalog;
     throw new Error("Supabase is not configured.");

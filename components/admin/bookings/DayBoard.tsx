@@ -6,11 +6,14 @@ import { formatTime } from "@/lib/availability";
 import {
   statusLabel,
   STEP,
+  PX,
+  MIN_TILE_PX,
   assignLanes,
-  isActiveStatus,
   type AdminBooking,
 } from "@/lib/admin/bookings-shared";
+import { AlertIcon, StatusIcon } from "../icons";
 import BookingDetail from "./BookingDetail";
+import { bookingClashes } from "./clash";
 
 export type BoardBarber = {
   id: string;
@@ -20,8 +23,6 @@ export type BoardBarber = {
   closed: { start: number; end: number }[];
   onLeave: boolean;
 };
-
-const PX = 1.5; // px per minute -> 45px per 30-min row
 
 function Column({
   barber,
@@ -83,10 +84,11 @@ function Column({
           </div>
         )}
         {bookings.map((b, i) => {
-          const active = isActiveStatus(b.status);
+          const cancelled = b.status === "cancelled";
+          const clash = bookingClashes(b, barber);
           const { lane, lanes: n } = lanes[i];
           const sel = b.id === selectedId;
-          const h = Math.max((b.endMin - b.startMin) * PX - 2, 22);
+          const h = Math.max((b.endMin - b.startMin) * PX - 2, MIN_TILE_PX);
           return (
             <button
               key={b.id}
@@ -96,8 +98,10 @@ function Column({
               className={`absolute overflow-hidden border px-2 py-1 text-left text-xs leading-tight transition ${
                 sel
                   ? "z-20 bg-white text-black border-white"
-                  : "z-10 bg-[#141414] border-white/30 hover:border-white"
-              } ${active ? "" : "opacity-50"}`}
+                  : clash
+                    ? "z-10 bg-[#141414] border-amber-500 hover:border-white"
+                    : "z-10 bg-[#141414] border-white/30 hover:border-white"
+              } ${cancelled ? "opacity-50" : ""} ${clash && !sel ? "border-dashed" : ""}`}
               style={{
                 top: (b.startMin - bounds.start) * PX + 1,
                 height: h,
@@ -105,22 +109,31 @@ function Column({
                 width: `calc(${100 / n}% - 2px)`,
               }}
             >
-              <span className="block tracking-[0.1em]">
-                {formatTime(b.startMin)}–{formatTime(b.endMin)}
+              <span className="flex items-center gap-1 tracking-[0.05em]">
+                <StatusIcon status={b.status} onLight={sel} />
+                <span className="truncate">
+                  {formatTime(b.startMin)}–{formatTime(b.endMin)}
+                </span>
+                {clash && (
+                  <span
+                    className={`ml-auto inline-flex shrink-0 items-center gap-0.5 border px-1 text-[9px] font-semibold uppercase tracking-[0.1em] ${
+                      sel ? "border-amber-700 text-amber-800" : "border-amber-500 text-amber-400"
+                    }`}
+                  >
+                    <AlertIcon className="size-2.5" />
+                    Clash
+                  </span>
+                )}
               </span>
-              <span className={`block truncate font-semibold ${active ? "" : "line-through"}`}>
-                {b.name}
+              <span className={`block truncate font-semibold ${cancelled ? "line-through" : ""}`}>
+                <bdi>{b.name}</bdi>
               </span>
               <span className="block truncate">
                 {b.serviceName}
                 {b.addonNames.length ? ` +${b.addonNames.length}` : ""}
               </span>
-              {b.status !== "confirmed" && (
-                <span
-                  className={`block truncate uppercase tracking-[0.15em] text-[10px] ${
-                    b.status === "completed" && !sel ? "text-green-400" : ""
-                  }`}
-                >
+              {b.status !== "confirmed" && h >= 78 && (
+                <span className="block truncate uppercase tracking-[0.15em] text-[10px]">
                   {statusLabel(b)}
                 </span>
               )}
@@ -137,14 +150,24 @@ export default function DayBoard({
   barbers,
   bookings,
   bounds,
+  defaultBarberId,
+  initialSelectedId,
 }: {
   date: string;
   barbers: BoardBarber[];
   bookings: AdminBooking[];
   bounds: { start: number; end: number };
+  /** Barber tab to open on (the logged-in admin's own barber), if any. */
+  defaultBarberId?: string | null;
+  /** Booking to open straight away (from search). */
+  initialSelectedId?: string | null;
 }) {
-  const [barberId, setBarberId] = useState(barbers[0]?.id ?? "");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const initialBooking = bookings.find((b) => b.id === initialSelectedId) ?? null;
+  const [barberId, setBarberId] = useState(
+    initialBooking?.barberId ??
+      (barbers.some((b) => b.id === defaultBarberId) ? (defaultBarberId as string) : (barbers[0]?.id ?? "")),
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(initialBooking?.id ?? null);
   const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const close = () => {
@@ -174,11 +197,42 @@ export default function DayBoard({
     }
   };
   const selected = bookings.find((b) => b.id === selectedId) ?? null;
+  const barberById = new Map(barbers.map((b) => [b.id, b]));
+  const clashing = bookings.filter((b) => bookingClashes(b, barberById.get(b.barberId)));
   const rows: number[] = [];
   for (let m = bounds.start; m < bounds.end; m += 30) rows.push(m);
 
+  const openFromBanner = (b: AdminBooking, el: HTMLElement) => {
+    openerRef.current = el;
+    setBarberId(b.barberId);
+    setSelectedId(b.id);
+  };
+
   return (
     <div>
+      {clashing.length > 0 && (
+        <div role="status" className="mb-4 border border-amber-500/60 bg-amber-500/10 p-3">
+          <p className="flex items-center gap-2 text-sm text-amber-400">
+            <AlertIcon className="size-4" />
+            {clashing.length} {clashing.length === 1 ? "booking clashes" : "bookings clash"} with time off
+            or hours
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {clashing.map((b) => (
+              <li key={b.id}>
+                <button
+                  type="button"
+                  onClick={(e) => openFromBanner(b, e.currentTarget)}
+                  className="inline-flex min-h-11 items-center gap-2 border border-amber-500/60 px-3 text-xs hover:bg-amber-500 hover:text-black"
+                >
+                  {formatTime(b.startMin)} · <bdi>{b.name}</bdi> · {barberById.get(b.barberId)?.name ?? ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="md:hidden mb-4 flex flex-wrap gap-2" role="group" aria-label="Barber">
         {barbers.map((b) => (
           <button
@@ -247,12 +301,13 @@ export default function DayBoard({
             aria-modal="true"
             aria-labelledby="booking-detail-title"
             onKeyDown={onDialogKeyDown}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto border-t border-white/10 bg-[#0b0b0b] md:inset-x-auto md:right-0 md:top-0 md:max-h-none md:w-[420px] md:border-l md:border-t-0"
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto border-t border-white/10 bg-[#0b0b0b] md:inset-x-auto md:right-0 md:top-0 md:max-h-none md:w-[420px] md:border-l md:border-t-0"
           >
             <BookingDetail
               key={selected.id}
               booking={selected}
               barberName={barbers.find((b) => b.id === selected.barberId)?.name ?? ""}
+              clash={bookingClashes(selected, barberById.get(selected.barberId))}
               onClose={close}
             />
           </div>

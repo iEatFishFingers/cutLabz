@@ -40,7 +40,7 @@ export default function BarbersPage() {
     <div>
       <PageHeader
         title="Barbers"
-        intro="Barbers cannot be deleted because past bookings refer to them. Untick Active to stop taking new bookings."
+        intro="A barber can only be deleted if they have never had a booking. Otherwise untick Active to stop taking new bookings."
       />
       <Suspense fallback={<PanelSkeleton />}>
         <BarbersContent />
