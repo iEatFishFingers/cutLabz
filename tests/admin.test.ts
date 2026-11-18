@@ -128,12 +128,12 @@ describe("status transitions", () => {
       assert.equal(checkTransition(from, "no_show", false).ok, false);
       assert.equal(checkTransition(from, from, true).ok, false);
     }
+    assert.equal(checkTransition("cancelled", "confirmed", false).ok, true);
     for (const from of ["cancelled", "completed", "no_show"] as const) {
-      assert.equal(checkTransition(from, "confirmed", false).ok, true);
       assert.equal(checkTransition(from, "pending", true).ok, false);
-      assert.equal(checkTransition(from, "completed", true).ok, false);
       assert.equal(checkTransition(from, "cancelled", true).ok, false);
     }
+    assert.equal(checkTransition("completed", "confirmed", false).ok, false);
     assert.equal(checkTransition("pending", "confirmed", true).ok, false);
   });
 
@@ -215,29 +215,29 @@ describe("admin search", () => {
   });
 
   test("too short or non-string returns nothing", async () => {
-    assert.deepEqual(await searchAdminBookings(s(), " a "), []);
-    assert.deepEqual(await searchAdminBookings(s(), 42), []);
+    assert.deepEqual(await searchAdminBookings(s(), " a "), { bookings: [], truncated: false });
+    assert.deepEqual(await searchAdminBookings(s(), 42), { bookings: [], truncated: false });
   });
 
   test("matches name case-insensitively, upcoming first then most recent", async () => {
-    const r = await searchAdminBookings(s(), "sAm");
+    const r = (await searchAdminBookings(s(), "sAm")).bookings;
     assert.deepEqual(r.map((b) => b.id), [ID1, ID2]);
     assert.equal(r[0].statusChangedAt, null);
   });
 
   test("wildcard characters are literal", async () => {
-    assert.deepEqual((await searchAdminBookings(s(), "0% J")).map((b) => b.id), [ID3]);
-    assert.deepEqual((await searchAdminBookings(s(), "%%")).map((b) => b.id), []);
-    assert.deepEqual((await searchAdminBookings(s(), "S%h")).map((b) => b.id), []);
-    assert.deepEqual((await searchAdminBookings(s(), "e_b")).map((b) => b.id), [ID3]);
-    assert.deepEqual((await searchAdminBookings(s(), "sa_")).map((b) => b.id), []);
+    assert.deepEqual((await searchAdminBookings(s(), "0% J")).bookings.map((b) => b.id), [ID3]);
+    assert.deepEqual((await searchAdminBookings(s(), "%%")).bookings.map((b) => b.id), []);
+    assert.deepEqual((await searchAdminBookings(s(), "S%h")).bookings.map((b) => b.id), []);
+    assert.deepEqual((await searchAdminBookings(s(), "e_b")).bookings.map((b) => b.id), [ID3]);
+    assert.deepEqual((await searchAdminBookings(s(), "sa_")).bookings.map((b) => b.id), []);
   });
 
   test("phone matches by digits regardless of spacing, email and reference match too", async () => {
-    assert.deepEqual((await searchAdminBookings(s(), "07700 900000")).map((b) => b.id).sort(), [ID1, ID2].sort());
-    assert.deepEqual((await searchAdminBookings(s(), "7700111")).map((b) => b.id), [ID3]);
-    assert.deepEqual((await searchAdminBookings(s(), "joe@x")).map((b) => b.id), [ID3]);
-    assert.deepEqual((await searchAdminBookings(s(), "cl-333333")).map((b) => b.id), [ID3]);
+    assert.deepEqual((await searchAdminBookings(s(), "07700 900000")).bookings.map((b) => b.id).sort(), [ID1, ID2].sort());
+    assert.deepEqual((await searchAdminBookings(s(), "7700111")).bookings.map((b) => b.id), [ID3]);
+    assert.deepEqual((await searchAdminBookings(s(), "joe@x")).bookings.map((b) => b.id), [ID3]);
+    assert.deepEqual((await searchAdminBookings(s(), "cl-333333")).bookings.map((b) => b.id), [ID3]);
   });
 
   test("caps at 25", async () => {
@@ -245,7 +245,9 @@ describe("admin search", () => {
       bk(`aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, "0")}`, { name: "Bulk Person", booking_date: "2099-03-01" }),
     );
     const sess = session(fakeDb({ bookings: many, barbers: [], services: [], addons: [], availability: [], time_off: [] }));
-    assert.equal((await searchAdminBookings(sess, "bulk")).length, 25);
+    const res = await searchAdminBookings(sess, "bulk");
+    assert.equal(res.bookings.length, 25);
+    assert.equal(res.truncated, true);
   });
 });
 

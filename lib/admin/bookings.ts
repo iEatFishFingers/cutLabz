@@ -2,6 +2,7 @@ import "server-only";
 import type { AdminSession } from "@/lib/admin/auth";
 import type { ServerCatalog, TimeOff, Window } from "@/lib/catalog";
 import {
+  addDays,
   LIMITS,
   REQUEST_KEY_RE,
   isValidDateString,
@@ -11,7 +12,7 @@ import {
   stripBidi,
 } from "@/lib/booking-shared";
 import { hasStarted } from "@/lib/membership";
-import { findBookingByRequestKey, insertBooking, type Booking } from "@/lib/store";
+import { DELETED_PHONE, findBookingByRequestKey, insertBooking, type Booking } from "@/lib/store";
 import {
   STEP,
   UUID_RE,
@@ -21,6 +22,8 @@ import {
   isActiveStatus,
   isOnLeave,
   isStatus,
+  allowedStatusChanges,
+  cancelledByOf,
   type AdminActionResult,
   type AdminBarber,
   type AdminBooking,
@@ -31,11 +34,11 @@ type Db = AdminSession["db"];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const COLS =
-  "id,reference,booking_date,start_min,end_min,barber_id,service_id,addon_ids,name,email,phone,notes,total_pence,status,payment_status,status_changed_at,status_changed_by";
+  "id,reference,booking_date,start_min,end_min,barber_id,service_id,addon_ids,name,email,phone,notes,total_pence,status,payment_status,status_changed_at,status_changed_by,contacted_at";
 
 type NameDir = Pick<AdminDirectory, "serviceNames" | "addonNames">;
 
-function mapBooking(r: any, dir: NameDir): AdminBooking {
+function mapBooking(r: any, dir: NameDir, clash: boolean | null = null): AdminBooking {
   return {
     id: r.id,
     reference: r.reference ?? "",
@@ -55,8 +58,21 @@ function mapBooking(r: any, dir: NameDir): AdminBooking {
     paymentStatus: r.payment_status ?? "",
     statusChangedAt: r.status_changed_at ? String(r.status_changed_at) : null,
     statusChangedBy: r.status_changed_by ? String(r.status_changed_by) : null,
+    cancelledBy: cancelledByOf(String(r.status ?? ""), r.status_changed_by ? String(r.status_changed_by) : null),
+    contactedAt: r.contacted_at ? String(r.contacted_at) : null,
+    clash,
   };
 }
+
+/** True when the booking sits in the barber's time off or outside their working hours. */
+function isClash(r: any, dir: Pick<AdminDirectory, "barbers" | "timeOff">): boolean {
+  const barber = dir.barbers.find((b) => b.id === r.barber_id);
+  const date = String(r.booking_date);
+  if (isOnLeave(dir.timeOff, r.barber_id, date)) return true;
+  return !barber || !fitsInWindows(barberWindows(barber, date), r.start_min, r.end_min);
+}
+
+const isActiveRow = (r: any) => r.status === "pending" || r.status === "confirmed";
 
 export type AdminDirectory = {
   barbers: AdminBarber[]; // ALL barbers, including inactive
@@ -124,18 +140,20 @@ export async function listAdminBookings(
 
 const STALE = "This booking changed. Refresh and try again.";
 const FUTURE_BLOCKED = "A future booking can't be marked completed or no-show.";
+const REOPEN_BLOCKED = "A booking that has already started can't be reopened.";
 
-/** Server-side transition rules. `started` = the booking's start time has passed (shop-local). */
+/** Server-side transition rules (same table the UI uses). `started` = start time passed (shop-local). */
 export function checkTransition(
   from: BookingStatus,
   to: BookingStatus,
   started: boolean,
 ): { ok: true } | { ok: false; error: string } {
+  if (allowedStatusChanges(from, started).includes(to)) return { ok: true }; // Reopen: overlap constraint still applies
   const open = from === "pending" || from === "confirmed";
-  if (open && to === "cancelled") return { ok: true };
-  if (open && (to === "completed" || to === "no_show"))
-    return started ? { ok: true } : { ok: false, error: FUTURE_BLOCKED };
-  if (!open && to === "confirmed") return { ok: true }; // Reopen (overlap constraint still applies)
+  if (open && !started && (to === "completed" || to === "no_show"))
+    return { ok: false, error: FUTURE_BLOCKED };
+  if (from === "cancelled" && started && to === "confirmed")
+    return { ok: false, error: REOPEN_BLOCKED };
   return { ok: false, error: "That status change isn't allowed." };
 }
 
@@ -206,12 +224,13 @@ export function escapeLike(s: string): string {
 export async function searchAdminBookings(
   session: AdminSession,
   query: unknown,
-): Promise<AdminBooking[]> {
-  if (typeof query !== "string") return [];
+): Promise<{ bookings: AdminBooking[]; truncated: boolean }> {
+  if (typeof query !== "string") return { bookings: [], truncated: false };
   const q = query.trim().slice(0, SEARCH_MAX);
-  if (q.length < SEARCH_MIN) return [];
+  if (q.length < SEARCH_MIN) return { bookings: [], truncated: false };
   const db = session.db;
-  const today = shopNow().date;
+  const now = shopNow();
+  const today = now.date;
   const like = `%${escapeLike(q)}%`;
 
   const digits = /^[\d\s()+-]+$/.test(q) ? q.replace(/\D/g, "").slice(0, 15) : "";
@@ -232,7 +251,7 @@ export async function searchAdminBookings(
       .gte("booking_date", today)
       .order("booking_date", { ascending: true })
       .order("start_min", { ascending: true })
-      .limit(SEARCH_LIMIT),
+      .limit(SEARCH_LIMIT + 1),
     db
       .from("bookings")
       .select(COLS)
@@ -240,7 +259,7 @@ export async function searchAdminBookings(
       .lt("booking_date", today)
       .order("booking_date", { ascending: false })
       .order("start_min", { ascending: false })
-      .limit(SEARCH_LIMIT),
+      .limit(SEARCH_LIMIT + 1),
   ]);
   const results = await Promise.all(jobs);
   const byId = new Map<string, any>();
@@ -268,7 +287,125 @@ export async function searchAdminBookings(
       String(b.booking_date).localeCompare(String(a.booking_date)) || b.start_min - a.start_min,
     );
   const dir = await loadAdminDirectory(db);
-  return [...upcoming, ...past].slice(0, SEARCH_LIMIT).map((r) => mapBooking(r, dir));
+  const merged = [...upcoming, ...past];
+  const bookings = merged.slice(0, SEARCH_LIMIT).map((r) => {
+    const notStarted = !hasStarted(String(r.booking_date), Number(r.start_min), now);
+    const clash = notStarted ? (isActiveRow(r) ? isClash(r, dir) : false) : null;
+    return mapBooking(r, dir, clash);
+  });
+  return { bookings, truncated: merged.length > SEARCH_LIMIT };
+}
+
+/* ---------- needs attention ---------- */
+
+export const ATTENTION_MAX = 100;
+const PAST_DAYS = 45;
+const CLASH_DAYS = 28;
+const CONTACT_DAYS = 14;
+
+export type AttentionItems = {
+  clashes: AdminBooking[];
+  unresolvedPast: AdminBooking[];
+  toContact: AdminBooking[];
+};
+
+const byWhen = (a: any, b: any) =>
+  String(a.booking_date).localeCompare(String(b.booking_date)) || a.start_min - b.start_min;
+
+export async function getAttentionItems(session: AdminSession): Promise<AttentionItems> {
+  const db = session.db;
+  const now = shopNow();
+  const today = now.date;
+  const q = () => db.from("bookings").select(COLS);
+  const [past, soon, cancelled, dir] = await Promise.all([
+    q()
+      .in("status", ["pending", "confirmed"])
+      .gte("booking_date", addDays(today, -PAST_DAYS))
+      .lte("booking_date", today)
+      .order("booking_date", { ascending: true })
+      .order("start_min", { ascending: true })
+      .limit(500),
+    q()
+      .in("status", ["pending", "confirmed"])
+      .gte("booking_date", today)
+      .lte("booking_date", addDays(today, CLASH_DAYS))
+      .order("booking_date", { ascending: true })
+      .order("start_min", { ascending: true })
+      .limit(1000),
+    q()
+      .eq("status", "cancelled")
+      .is("contacted_at", null)
+      .gte("status_changed_at", new Date(Date.now() - CONTACT_DAYS * 86_400_000).toISOString())
+      .order("booking_date", { ascending: true })
+      .order("start_min", { ascending: true })
+      .limit(500),
+    loadAdminDirectory(db),
+  ]);
+  for (const r of [past, soon, cancelled]) {
+    if (r.error) {
+      console.error("admin attention load failed", r.error.code);
+      throw new Error("Could not load bookings.");
+    }
+  }
+  const rowsOf = (r: { data: unknown }) => ((r.data ?? []) as any[]).filter(Boolean);
+  const started = (r: any) => hasStarted(String(r.booking_date), Number(r.start_min), now);
+  const map = (r: any, clash: boolean | null = null) => mapBooking(r, dir, clash);
+
+  const unresolvedPast = rowsOf(past)
+    .filter((r) => isActiveRow(r) && started(r))
+    .sort(byWhen)
+    .slice(0, ATTENTION_MAX)
+    .map((r) => map(r));
+  const clashes = rowsOf(soon)
+    .filter((r) => isActiveRow(r) && !started(r) && isClash(r, dir))
+    .sort(byWhen)
+    .slice(0, ATTENTION_MAX)
+    .map((r) => map(r, true));
+  const toContact = rowsOf(cancelled)
+    .filter(
+      (r) =>
+        r.status === "cancelled" &&
+        !r.contacted_at &&
+        cancelledByOf(r.status, r.status_changed_by) === "shop" &&
+        String(r.phone ?? "") !== DELETED_PHONE,
+    )
+    .sort(byWhen)
+    .slice(0, ATTENTION_MAX)
+    .map((r) => map(r));
+  return { clashes, unresolvedPast, toContact };
+}
+
+/** Marks a shop-cancelled booking as contacted. Idempotent. */
+export async function markBookingContacted(
+  session: AdminSession,
+  id: unknown,
+): Promise<AdminActionResult> {
+  if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "Invalid booking." };
+  const db = session.db;
+  const { data: cur, error } = await db
+    .from("bookings")
+    .select("id,status,status_changed_by,contacted_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    console.error("admin contacted read failed", error.code);
+    return { ok: false, error: "Could not update the booking." };
+  }
+  if (!cur) return { ok: false, error: "Booking not found." };
+  if (cancelledByOf(String(cur.status), cur.status_changed_by as string | null) !== "shop")
+    return { ok: false, error: "Only a booking the shop cancelled can be marked as contacted." };
+  if (cur.contacted_at) return { ok: true };
+  const { error: upErr } = await db
+    .from("bookings")
+    .update({ contacted_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "cancelled")
+    .is("contacted_at", null);
+  if (upErr) {
+    console.error("admin contacted update failed", upErr.code);
+    return { ok: false, error: "Could not update the booking." };
+  }
+  return { ok: true };
 }
 
 export type CreateInput = {

@@ -14,3 +14,20 @@ export const STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
   no_show: "No-show",
 };
+
+/** Customer-facing status: a pending/confirmed booking whose start has passed reads "Past". */
+export function bookingStatusLabel(b: {
+  status: string;
+  started: boolean;
+  cancelledBy?: "customer" | "shop" | null;
+}): string {
+  if ((b.status === "confirmed" || b.status === "pending") && b.started) return "Past";
+  if (b.status === "cancelled") {
+    return b.cancelledBy === "shop"
+      ? "Cancelled by the shop"
+      : b.cancelledBy === "customer"
+        ? "Cancelled by you"
+        : "Cancelled";
+  }
+  return STATUS_LABEL[b.status] ?? b.status;
+}

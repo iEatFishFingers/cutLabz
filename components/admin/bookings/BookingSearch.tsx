@@ -5,14 +5,14 @@ import Link from "next/link";
 import { searchBookingsAction } from "@/app/admin/(panel)/bookings/actions";
 import { formatTime } from "@/lib/availability";
 import { statusLabel, type AdminBooking } from "@/lib/admin/bookings-shared";
-import { SearchIcon, StatusIcon } from "../icons";
+import { AlertIcon, SearchIcon, StatusIcon } from "../icons";
 import { shortDateWithYear } from "./clash";
 
 type Result =
   | { phase: "idle" }
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "done"; bookings: AdminBooking[] };
+  | { phase: "done"; bookings: AdminBooking[]; truncated: boolean };
 
 export default function BookingSearch({ barbers }: { barbers: { id: string; name: string }[] }) {
   const [query, setQuery] = useState("");
@@ -31,7 +31,9 @@ export default function BookingSearch({ barbers }: { barbers: { id: string; name
         const res = await searchBookingsAction(q);
         if (mine !== seq.current) return;
         setResult(
-          res.ok ? { phase: "done", bookings: res.bookings } : { phase: "error", message: res.error },
+          res.ok
+            ? { phase: "done", bookings: res.bookings, truncated: res.truncated }
+            :{ phase: "error", message: res.error },
         );
       } catch {
         if (mine !== seq.current) return;
@@ -86,23 +88,37 @@ export default function BookingSearch({ barbers }: { barbers: { id: string; name
               <li key={b.id}>
                 <Link
                   href={`/admin?date=${b.date}&view=day&booking=${b.id}`}
-                  className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm hover:bg-white hover:text-black"
+                  className="block min-h-11 px-3 py-2 text-sm hover:bg-white hover:text-black"
                 >
-                  <span className="shrink-0 text-xs tracking-[0.1em] opacity-70">
-                    {shortDateWithYear(b.date)} · {formatTime(b.startMin)}
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="shrink-0 text-xs tracking-[0.1em] opacity-70">
+                      {shortDateWithYear(b.date)} · {formatTime(b.startMin)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-semibold">
+                      <bdi>{b.name}</bdi>
+                    </span>
+                    <span className="shrink-0 text-xs opacity-70">{barberName(b.barberId)}</span>
+                    {b.clash === true && (
+                      <span className="inline-flex shrink-0 items-center gap-0.5 border border-red-500 px-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-red-500">
+                        <AlertIcon className="size-2.5" />
+                        Clash
+                      </span>
+                    )}
+                    <span className="inline-flex shrink-0 items-center gap-1 border border-current/40 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.15em]">
+                      <StatusIcon status={b.status} />
+                      {statusLabel(b)}
+                    </span>
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-semibold">
-                    <bdi>{b.name}</bdi>
-                  </span>
-                  <span className="shrink-0 text-xs opacity-70">{barberName(b.barberId)}</span>
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-[0.15em]">
-                    <StatusIcon status={b.status} />
-                    {statusLabel(b)}
+                  <span className="mt-1 block truncate text-xs opacity-70">
+                    {b.phone ? <bdi>{b.phone}</bdi> : "No phone"} · Ref {b.reference}
                   </span>
                 </Link>
               </li>
             ))}
           </ul>
+        )}
+        {shown.phase === "done" && shown.truncated && (
+          <p className="mt-2 text-xs text-white/60">Showing the first 25 matches. Narrow your search.</p>
         )}
       </div>
     </section>

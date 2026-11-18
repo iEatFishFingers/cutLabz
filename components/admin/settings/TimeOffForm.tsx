@@ -16,11 +16,15 @@ import { BTN_PRIMARY, CARD, FieldError, INPUT, LABEL, ResultMessage } from "./ui
 export default function TimeOffForm({
   barbers,
   minDate,
+  defaultBarberId,
 }: {
   barbers: { id: string; name: string }[];
   minDate: string;
+  defaultBarberId?: string | null;
 }) {
-  const blank = { barberId: "", startDate: "", endDate: "", reason: "" };
+  const initialBarber =
+    defaultBarberId && barbers.some((b) => b.id === defaultBarberId) ? defaultBarberId : "";
+  const blank = { barberId: initialBarber, startDate: "", endDate: "", reason: "" };
   const [vals, setVals] = useState(blank);
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     async (prev, fd) => {

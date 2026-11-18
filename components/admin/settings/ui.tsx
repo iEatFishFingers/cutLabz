@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ActionResult } from "@/lib/admin/catalog-admin";
 
 export const INPUT =
@@ -18,7 +19,13 @@ export function PageHeader({ title, intro }: { title: string; intro: string }) {
   );
 }
 
-export function ResultMessage({ result }: { result: ActionResult | null }) {
+export function ResultMessage({
+  result,
+  warningLink,
+}: {
+  result: ActionResult | null;
+  warningLink?: { href: string; label: string };
+}) {
   if (!result) return null;
   if (!result.ok) {
     return (
@@ -30,7 +37,22 @@ export function ResultMessage({ result }: { result: ActionResult | null }) {
   return (
     <div role="status" className="mt-3 space-y-1">
       <p className="text-sm text-green-400">{result.message}</p>
-      {result.warning ? <p className="text-sm text-red-400">{result.warning}</p> : null}
+      {result.warning ? (
+        <p className="text-sm text-red-400">
+          {result.warning}
+          {warningLink ? (
+            <>
+              {" "}
+              <Link
+                href={warningLink.href}
+                className="inline-flex min-h-11 items-center underline hover:text-white"
+              >
+                {warningLink.label}
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }

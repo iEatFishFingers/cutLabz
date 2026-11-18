@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ContactLinks from "@/components/account/ContactLinks";
 import RescheduleForm from "@/components/account/bookings/RescheduleForm";
 import { BTN_SECONDARY, LABEL, LINK } from "@/components/account/bookings/ui";
 import { shopNow } from "@/lib/booking-shared";
@@ -34,7 +35,7 @@ export default async function ReschedulePage({
           <p className={LABEL}>Within 24 hours</p>
           <p className="mt-3 text-sm text-white/70">
             This appointment starts in less than 24 hours, so it can&apos;t be changed online.
-            Contact the shop to move it.{" "}
+            To move it, phone or email the shop: <ContactLinks />.{" "}
             <Link href="/terms" className={LINK}>
               See terms
             </Link>

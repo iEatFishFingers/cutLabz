@@ -4,8 +4,9 @@ import type { KeyboardEvent } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Service } from "@/lib/catalog";
-import { addonPrice, formatGBP, type BookingDraft } from "@/lib/booking-shared";
+import { formatDate, formatGBP, type BookingDraft } from "@/lib/booking-shared";
 import { useCatalog } from "./catalog-context";
+import { INCLUDED_WITH_PREMIUM, useDraftQuote } from "./useDraftQuote";
 import { canUseService, useViewer } from "./viewer-context";
 
 type Props = {
@@ -75,10 +76,15 @@ export default function ServiceStep({ draft, update }: Props) {
   const { services, addons } = useCatalog();
   const viewer = useViewer();
   const isMember = viewer.membership != null;
+  const { freeAddons } = useDraftQuote(draft);
+  const limits = viewer.limits;
+  const atLimit = (limits?.upcomingCount ?? 0) >= 3;
+  const memberCutTaken = limits?.upcomingMemberCut ?? null;
   const selected = services.find((s) => s.id === draft.serviceId);
   const membership = services.filter((s) => s.kind === "membership");
   const oneOff = services.filter((s) => s.kind === "one-off");
-  const usable = services.filter((s) => canUseService(viewer, s));
+  const takenMemberCut = (s: Service) => s.kind === "membership" && memberCutTaken != null;
+  const usable = services.filter((s) => canUseService(viewer, s) && !takenMemberCut(s));
   const hasSelection = usable.some((s) => s.id === draft.serviceId);
 
   const toggleAddon = (id: string) => {
@@ -89,7 +95,9 @@ export default function ServiceStep({ draft, update }: Props) {
   };
 
   const renderCard = (s: Service, order: number) => {
-    const allowed = canUseService(viewer, s);
+    const owned = canUseService(viewer, s);
+    const taken = owned && takenMemberCut(s);
+    const allowed = owned && !taken;
     const checked = allowed && draft.serviceId === s.id;
     const tabbable = checked || (allowed && !hasSelection && s.id === usable[0]?.id);
     const delay = 0.04 * order;
@@ -127,7 +135,13 @@ export default function ServiceStep({ draft, update }: Props) {
           <span
             className={`mt-3 block text-xs ${checked ? "text-black/60" : "text-white/40"}`}
           >
-            {allowed ? "Your membership cut" : isMember ? "Members only" : "For active members"}
+            {allowed
+              ? "Your membership cut"
+              : taken
+                ? "Already booked"
+                : isMember
+                  ? "Members only"
+                  : "For active members"}
           </span>
         )}
       </motion.button>
@@ -136,7 +150,11 @@ export default function ServiceStep({ draft, update }: Props) {
     return (
       <div key={s.id} className="flex flex-col gap-2">
         {card}
-        {isMember ? (
+        {taken && memberCutTaken ? (
+          <p className="text-xs text-white/60">
+            You already have an upcoming member cut on {formatDate(memberCutTaken.date, { long: true })}
+          </p>
+        ) : isMember ? (
           <p className="text-xs text-white/40">Members only. Your plan is a different cut.</p>
         ) : (
           <Link
@@ -164,6 +182,20 @@ export default function ServiceStep({ draft, update }: Props) {
     <section>
       <StepHeader index={1} title="Choose your cut." body={isMember ? "Your membership cut is included. Or pay for a one-off." : "Pick a one-off, or join to unlock membership cuts."} />
 
+      {atLimit && (
+        <p role="status" className="mb-8 rounded-xl border border-white/20 bg-white/5 p-4 text-sm text-white/70">
+          You already have 3 upcoming appointments. Cancel one that is more than 24 hours away to
+          book another.{" "}
+          <Link
+            href="/account"
+            prefetch={false}
+            className={`inline-flex items-center min-h-11 underline underline-offset-4 hover:text-white transition ${FOCUS_RING}`}
+          >
+            Manage appointments
+          </Link>
+        </p>
+      )}
+
       <div role="radiogroup" aria-label="Service" className="space-y-8">
         {/* Non-members see the bookable one-off cuts first; locked plans sit below.
             DOM order matches visual order so arrow-key navigation follows the page. */}
@@ -181,21 +213,21 @@ export default function ServiceStep({ draft, update }: Props) {
         <div className="mt-10">
           <p className="mb-1 text-xs tracking-[0.2em] text-white/40">ADD-ONS</p>
           <p className="mb-4 text-sm text-white/50">
-            {selected.id === "premium"
+            {freeAddons
               ? "Included with Premium. Add as many as you like."
               : "Optional extras. Tap to add."}
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div role="group" aria-label="Add-ons" className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {addons.map((a) => {
               const on = draft.addonIds.includes(a.id);
-              const price = addonPrice(selected, a);
               return (
                 <button
                   key={a.id}
                   type="button"
-                  aria-pressed={on}
+                  role="checkbox"
+                  aria-checked={on}
                   onClick={() => toggleAddon(a.id)}
-                  className={`flex items-center gap-4 w-full rounded-xl px-5 py-4 border text-left transition ${FOCUS_RING} ${
+                  className={`flex items-center gap-4 w-full min-h-11 rounded-xl px-5 py-4 border text-left transition ${FOCUS_RING} ${
                     on
                       ? "bg-white text-black border-white"
                       : "bg-white/5 border-white/10 hover:bg-white/10"
@@ -215,8 +247,8 @@ export default function ServiceStep({ draft, update }: Props) {
                       +{a.extraMin} min
                     </span>
                   </span>
-                  <span className="text-sm shrink-0">
-                    {price === 0 ? "Included" : formatGBP(price)}
+                  <span className="text-sm shrink-0 text-right">
+                    {freeAddons ? INCLUDED_WITH_PREMIUM : formatGBP(a.priceGBP)}
                   </span>
                 </button>
               );

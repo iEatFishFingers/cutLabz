@@ -45,7 +45,7 @@ function Form({ booking, catalog }: { booking: MyBooking; catalog: ClientCatalog
   const [pending, start] = useTransition();
   const [refreshKey, setRefreshKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<{ text: string; membership?: boolean } | null>(null);
+  const [error, setError] = useState<{ text: string; membership?: boolean; stale?: boolean } | null>(null);
   const [draft, setDraft] = useState<BookingDraft>(() => ({
     ...emptyDraft,
     serviceId: booking.serviceId,
@@ -90,6 +90,11 @@ function Form({ booking, catalog }: { booking: MyBooking; catalog: ClientCatalog
           date,
           startMin,
           barberId,
+          expected: {
+            date: booking.date,
+            startMin: booking.startMin,
+            barberId: booking.barberId,
+          },
         });
         if (res.ok) {
           router.push("/account?rescheduled=1");
@@ -106,7 +111,11 @@ function Form({ booking, catalog }: { booking: MyBooking; catalog: ClientCatalog
         ) {
           router.replace(`/account?notice=${res.code}`);
         } else {
-          setError({ text: res.error, membership: res.code === "membership" });
+          setError({
+            text: res.error,
+            membership: res.code === "membership",
+            stale: res.code === "stale",
+          });
         }
       } catch {
         setError({ text: "Something went wrong. Check your connection and try again." });
@@ -174,6 +183,11 @@ function Form({ booking, catalog }: { booking: MyBooking; catalog: ClientCatalog
         {error && (
           <div className="flex flex-wrap items-center gap-4">
             <p className="text-sm text-red-400">{error.text}</p>
+            {error.stale && (
+              <button type="button" onClick={() => router.refresh()} className={BTN_SECONDARY}>
+                Reload
+              </button>
+            )}
             {error.membership && (
               <Link href="/account/membership" className={`text-sm text-white/60 ${LINK}`}>
                 View membership

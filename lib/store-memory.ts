@@ -2,7 +2,12 @@
 // Dates are "YYYY-MM-DD" and times are minutes from midnight, shop-local time.
 // Mirrors the Postgres semantics: only pending/confirmed rows block a slot.
 
-import { isActiveStatus, type Booking, type RescheduleTarget } from "./store";
+import {
+  isActiveStatus,
+  type Booking,
+  type RescheduleExpected,
+  type RescheduleTarget,
+} from "./store";
 import { shopNow } from "./booking-shared";
 import { hasStarted, MAX_UPCOMING_BOOKINGS } from "./membership";
 
@@ -96,6 +101,8 @@ export async function cancelUpcomingBookingsForUser(
   for (const b of bookings) {
     if (b.userId === userId && isActiveStatus(b.status) && !hasStarted(b.date, b.startMin, now)) {
       b.status = "cancelled";
+      b.cancelledAt = new Date().toISOString();
+      b.statusChangedBy = "customer";
       n++;
     }
   }
@@ -132,6 +139,8 @@ export async function cancelBooking(userId: string, id: string): Promise<boolean
   const b = bookings.find((x) => x.id === id && x.userId === userId && isActiveStatus(x.status));
   if (!b) return false;
   b.status = "cancelled";
+  b.cancelledAt = new Date().toISOString();
+  b.statusChangedBy = "customer";
   return true;
 }
 
@@ -139,9 +148,16 @@ export async function rescheduleBookingRow(
   userId: string,
   id: string,
   to: RescheduleTarget,
-): Promise<Booking | "conflict" | "not_found" | "limit"> {
+  expected: RescheduleExpected,
+): Promise<Booking | "conflict" | "not_found" | "limit" | "stale"> {
   const b = bookings.find((x) => x.id === id && x.userId === userId && isActiveStatus(x.status));
   if (!b) return "not_found";
+  if (
+    b.date !== expected.date ||
+    b.startMin !== expected.startMin ||
+    b.barberId !== expected.barberId
+  )
+    return "stale";
   if (atCap(userId, id)) return "limit";
   if (bookings.some((x) => x.id !== id && overlaps(x, to))) return "conflict";
   b.date = to.date;

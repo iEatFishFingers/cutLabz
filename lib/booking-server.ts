@@ -6,6 +6,7 @@ import { loadCatalog } from "./catalog-db";
 import { computeSlots } from "./availability";
 import {
   BOOKING_LIMIT_MESSAGE,
+  MEMBER_CUT_LIMIT_MESSAGE,
   cancelBooking,
   findBookingByRequestKey,
   insertBooking,
@@ -28,6 +29,7 @@ import {
   isOpenDay,
   formatDate,
   isValidDateString,
+  planIncludesFreeAddons,
   quote,
   REQUEST_KEY_RE,
   stripBidi,
@@ -68,6 +70,7 @@ const isShortString = (v: unknown, max = MAX_ID_LEN): v is string =>
 function parseCommon(
   catalog: ServerCatalog,
   input: unknown,
+  viewer?: BookingViewer | null,
 ): { ok: true; value: Common } | { ok: false; error: string } {
   if (!isObject(input)) return { ok: false, error: "Invalid request." };
   const { serviceId, addonIds, barberId, date } = input;
@@ -96,7 +99,13 @@ function parseCommon(
   if (!isShortString(date, 10) || !isValidDateString(date))
     return { ok: false, error: "Choose a valid date." };
 
-  const q = quote(catalog, serviceId, cleanAddons);
+  // Free add-ons only for a Premium member booking their own member cut. Derived from
+  // the signed-in membership, never from the request.
+  const freeAddons =
+    isMembershipService(catalog, serviceId) &&
+    viewer?.membership?.plan === serviceId &&
+    planIncludesFreeAddons(viewer.membership.plan);
+  const q = quote(catalog, serviceId, cleanAddons, { freeAddons });
   if (!q) return { ok: false, error: "Choose a valid service." };
 
   return {
@@ -193,7 +202,7 @@ export async function createBooking(
 ): Promise<CreateBookingResult> {
   if (!viewer) return { ok: false, code: "auth", error: "Sign in to book." };
   const catalog = await loadCatalog();
-  const parsed = parseCommon(catalog, input);
+  const parsed = parseCommon(catalog, input, viewer);
   if (!parsed.ok) return { ok: false, code: "invalid", error: parsed.error };
   const { serviceId, addonIds, barberId, date, durationMin, totalGBP } = parsed.value;
   const raw = input as Record<string, unknown>;
@@ -250,11 +259,7 @@ export async function createBooking(
   const isMemberRow = (b: Booking) =>
     !!b.membershipId || isMembershipService(catalog, b.serviceId);
   if (memberCut && mine.filter(isMemberRow).length >= MAX_UPCOMING_MEMBER_CUTS)
-    return {
-      ok: false,
-      code: "limit",
-      error: "You already have an upcoming member cut. Cancel or complete it first.",
-    };
+    return { ok: false, code: "limit", error: MEMBER_CUT_LIMIT_MESSAGE };
   if (mine.length >= MAX_UPCOMING_BOOKINGS)
     return LIMIT_RESULT;
 
@@ -318,11 +323,7 @@ export async function createBooking(
         members.filter(olderThanRow).length >= MAX_UPCOMING_MEMBER_CUTS
       ) {
         await cancelBooking(viewer.userId, row.id);
-        return {
-          ok: false,
-          code: "limit",
-          error: "You already have an upcoming member cut. Cancel or complete it first.",
-        };
+        return { ok: false, code: "limit", error: MEMBER_CUT_LIMIT_MESSAGE };
       }
     }
     if (

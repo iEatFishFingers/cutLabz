@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import CancelMembership from "@/components/account/membership/CancelMembership";
+import ResumeMembership from "@/components/account/membership/ResumeMembership";
 import PlanCards from "@/components/account/membership/PlanCards";
 import { BTN_PRIMARY, LABEL } from "@/components/account/bookings/ui";
 import { formatDate, shopNow } from "@/lib/booking-shared";
@@ -78,29 +79,48 @@ export default async function MembershipPage({
           aria-label="Current plan"
           className="mt-6 bg-[#111] border border-white/10 rounded-xl p-6 md:p-8"
         >
-          <p className={LABEL}>Current plan</p>
+          <p className={LABEL}>
+            {current.cancelledAt
+              ? `${planName(current.plan)} member · Ends ${formatDate(current.endsOn)}`
+              : "Current plan"}
+          </p>
           <p className="mt-3 text-3xl font-[500] tracking-[-0.02em]">{planName(current.plan)}</p>
           {current.cancelledAt ? (
-            <p className="mt-3 text-sm text-amber-300">
-              Cancelled. Active until {formatDate(current.endsOn, { long: true })}
-            </p>
+            <>
+              <p className="mt-3 text-sm text-amber-300">
+                Ends {formatDate(current.endsOn, { long: true })}
+              </p>
+              <p className="mt-6 text-sm text-white/60">
+                Your membership won&apos;t renew. Free cuts stay available until{" "}
+                {formatDate(current.endsOn, { long: true })}.
+              </p>
+            </>
           ) : (
-            <p className="mt-3 text-sm text-white/80">
-              Active until {formatDate(current.endsOn, { long: true })}
-            </p>
+            <>
+              <p className="mt-3 text-sm text-white/80">
+                Active until {formatDate(current.endsOn, { long: true })}
+              </p>
+              <p className="mt-1 text-sm text-white/50">{daysLeftLabel(current.endsOn, today)}</p>
+              <p className="mt-6 text-sm text-white/60">
+                Unlimited cuts: one upcoming member cut at a time. You can&apos;t book past{" "}
+                {formatDate(current.endsOn, { long: true })}.
+              </p>
+            </>
           )}
-          <p className="mt-1 text-sm text-white/50">{daysLeftLabel(current.endsOn, today)}</p>
-          <p className="mt-6 text-sm text-white/60">
-            Unlimited cuts: one upcoming member cut at a time. You can&apos;t book past{" "}
-            {formatDate(current.endsOn, { long: true })}.
-          </p>
           <Link href="/book" className={`mt-6 ${BTN_PRIMARY}`}>
             Book a cut
           </Link>
-          {!current.cancelledAt && (
+          {current.cancelledAt ? (
+            <ResumeMembership />
+          ) : (
             <CancelMembership endsOnLabel={formatDate(current.endsOn, { long: true })} />
           )}
         </section>
+
+        <p className="mt-6 text-sm text-white/50">
+          Want a different plan? You can switch after your current membership ends on{" "}
+          {formatDate(current.endsOn, { long: true })}.
+        </p>
 
         <PastPlans plans={past} />
       </div>

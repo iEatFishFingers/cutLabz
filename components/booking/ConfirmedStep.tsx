@@ -9,6 +9,7 @@ import {
   type ConfirmedBooking,
 } from "@/lib/booking-shared";
 import { FOCUS_RING } from "./ServiceStep";
+import { ContactLinks } from "./ReviewStep";
 import { findService, pickAddons, useCatalog } from "./catalog-context";
 
 type Props = {
@@ -72,6 +73,15 @@ export default function ConfirmedStep({ booking, onBookAnother }: Props) {
           </div>
         ))}
       </dl>
+
+      <div className="mt-6 text-sm text-white/60">
+        <p>Nothing is charged online today.</p>
+        <p className="mt-1">
+          You can cancel or move this appointment online until 24 hours before it starts. After
+          that, phone or email the shop.
+        </p>
+        <ContactLinks className="mt-1" />
+      </div>
 
       <p className="mt-6 text-sm text-white/50">
         Location: Phenix Salon Suites, 1 Deansgate, Manchester M3 1AZ

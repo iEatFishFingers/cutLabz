@@ -7,7 +7,7 @@ import { PageHeader, PanelSkeleton } from "@/components/admin/settings/ui";
 export const metadata = { title: "Hours | Cut Labz Admin" };
 
 async function HoursContent() {
-  const { db } = await requireAdmin();
+  const { db, barberId } = await requireAdmin();
   const [barbers, avail] = await Promise.all([
     db.from("barbers").select("id,name,active").order("name"),
     db.from("availability").select("barber_id,weekday,open_min,close_min"),
@@ -26,7 +26,7 @@ async function HoursContent() {
   if (list.length === 0) {
     return <p className="text-sm text-white/50">No barbers yet. Add one under Barbers first.</p>;
   }
-  return <HoursEditor barbers={list} />;
+  return <HoursEditor barbers={list} initialBarberId={barberId} />;
 }
 
 export default function HoursPage() {

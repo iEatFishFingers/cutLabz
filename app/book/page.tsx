@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Nav from "@/components/Nav";
 import { ViewerProvider } from "@/components/booking/viewer-context";
 import { getViewer } from "@/lib/customer/viewer";
+import { getMyBookingLimits } from "@/lib/customer/bookings";
 import BookingLoader, { BookingSkeleton } from "./BookingLoader";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
 async function BookAccess() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login?next=/book");
+  const limits = await getMyBookingLimits({ userId: viewer.userId });
   return (
     <ViewerProvider
       viewer={{
@@ -28,6 +30,7 @@ async function BookAccess() {
         membership: viewer.membership
           ? { plan: viewer.membership.plan, endsOn: viewer.membership.endsOn }
           : null,
+        limits,
       }}
     >
       <BookingLoader />

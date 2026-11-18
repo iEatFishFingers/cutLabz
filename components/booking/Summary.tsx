@@ -3,20 +3,19 @@
 import { useId, useState } from "react";
 import { formatTime } from "@/lib/availability";
 import {
-  addonPrice,
   formatDate,
   formatGBP,
   getBarberName,
-  quote,
   type BookingDraft,
 } from "@/lib/booking-shared";
+import { INCLUDED_WITH_PREMIUM, useDraftQuote } from "./useDraftQuote";
 
 type Props = {
   draft: BookingDraft;
   variant: "panel" | "bar";
 };
 
-import { findService, pickAddons, useCatalog } from "./catalog-context";
+import { useCatalog } from "./catalog-context";
 
 const Empty = () => <span className="text-white/30">—</span>;
 
@@ -31,9 +30,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function Rows({ draft }: { draft: BookingDraft }) {
   const catalog = useCatalog();
-  const service = findService(catalog, draft.serviceId);
-  const chosen = pickAddons(catalog, draft.addonIds);
-  const q = quote(catalog, draft.serviceId, draft.addonIds);
+  const { service, chosen, freeAddons, q, addonCost } = useDraftQuote(draft);
   const barber = getBarberName(catalog, draft.barberId);
   const isMember = service?.kind === "membership";
 
@@ -53,12 +50,11 @@ function Rows({ draft }: { draft: BookingDraft }) {
           )}
         </Row>
         {chosen.map((a) => {
-          const price = addonPrice(service, a);
           return (
             <Row key={a.id} label="Add-on">
               <span className="block">{a.name}</span>
               <span className="block text-xs text-white/40 mt-1">
-                {price === 0 ? "Included" : `+${formatGBP(price)}`}
+                {freeAddons ? INCLUDED_WITH_PREMIUM : `+${formatGBP(addonCost(a))}`}
               </span>
             </Row>
           );
@@ -92,7 +88,7 @@ function Rows({ draft }: { draft: BookingDraft }) {
 export default function Summary({ draft, variant }: Props) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  const catalog = useCatalog();
+  const { service, chosen, q } = useDraftQuote(draft);
 
   if (variant === "panel") {
     return (
@@ -103,8 +99,6 @@ export default function Summary({ draft, variant }: Props) {
     );
   }
 
-  const service = findService(catalog, draft.serviceId);
-  const q = quote(catalog, draft.serviceId, draft.addonIds);
   const when = [
     draft.date ? formatDate(draft.date) : null,
     draft.startMin != null ? formatTime(draft.startMin) : null,
@@ -127,6 +121,12 @@ export default function Summary({ draft, variant }: Props) {
           {service ? (
             <p className="truncate">
               <span className="text-white">{service.name}</span>
+              {chosen.length > 0 && (
+                <span className="text-white/50">
+                  {" "}
+                  + {chosen.length} add-on{chosen.length === 1 ? "" : "s"}
+                </span>
+              )}
               {when && <span className="text-white/50"> • {when}</span>}
               {q && <span className="text-white/50"> • {formatGBP(q.totalGBP)}</span>}
             </p>

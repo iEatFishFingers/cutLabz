@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
-import { listAdminBookings, loadAdminDirectory } from "@/lib/admin/bookings";
+import { getAttentionItems, listAdminBookings, loadAdminDirectory } from "@/lib/admin/bookings";
+import AttentionPanel from "@/components/admin/bookings/AttentionPanel";
 import {
   barberWindows,
   closedSegments,
@@ -37,7 +38,18 @@ function CalendarSkeleton() {
   );
 }
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+async function Attention({
+  session,
+  barbers,
+}: {
+  session: Awaited<ReturnType<typeof requireAdmin>>;
+  barbers: { id: string; name: string }[];
+}) {
+  const initial = await getAttentionItems(session);
+  return <AttentionPanel initial={initial} barbers={barbers} />;
+}
+
+type SearchParams =Promise<Record<string, string | string[] | undefined>>;
 
 async function Calendar({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
@@ -112,6 +124,9 @@ async function Calendar({ searchParams }: { searchParams: SearchParams }) {
   return (
     <div className="space-y-6">
       <BookingSearch barbers={dir.barbers.map((b) => ({ id: b.id, name: b.name }))} />
+      <Suspense fallback={<div className="h-11 border border-white/10 bg-white/[0.04] animate-pulse" />}>
+        <Attention session={session} barbers={dir.barbers.map((b) => ({ id: b.id, name: b.name }))} />
+      </Suspense>
       {fellBack && (
         <p role="status" className="text-xs text-amber-400">
           Date not recognised, showing today.

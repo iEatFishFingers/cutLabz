@@ -26,6 +26,7 @@ export type RescheduleResult =
         | "membership"
         | "limit"
         | "invalid"
+        | "stale"
         | "error";
       error: string;
     };
@@ -83,7 +84,21 @@ export async function rescheduleBookingAction(input: {
   date: string;
   startMin: number;
   barberId: string;
+  /** The slot the page believes the booking currently has. */
+  expected: { date: string; startMin: number; barberId: string };
 }): Promise<RescheduleResult> {
+  const ex = input?.expected;
+  if (
+    !ex ||
+    typeof ex.date !== "string" ||
+    !isValidDateString(ex.date) ||
+    !Number.isInteger(ex.startMin) ||
+    ex.startMin < 0 ||
+    ex.startMin >= 1440 ||
+    !isId(ex.barberId)
+  ) {
+    return INVALID;
+  }
   if (
     !input ||
     !isId(input.bookingId) ||
@@ -106,6 +121,7 @@ export async function rescheduleBookingAction(input: {
         date: input.date,
         startMin: input.startMin,
         barberId: input.barberId,
+        expected: { date: ex.date, startMin: ex.startMin, barberId: ex.barberId },
       },
       shopNow(),
     );

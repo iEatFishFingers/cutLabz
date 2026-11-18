@@ -9,6 +9,12 @@ export type BookingViewer = {
   phone: string;
   /** Active membership today, or null. endsOn is inclusive. */
   membership: { plan: string; endsOn: string } | null;
+  /** Upcoming-booking limits for early warnings (the server still enforces them). */
+  limits?: {
+    upcomingCount: number;
+    /** Shop-local "YYYY-MM-DD" date and start minute of the upcoming member cut. */
+    upcomingMemberCut: { date: string; startMin: number } | null;
+  };
 };
 
 const ViewerContext = createContext<BookingViewer | null>(null);

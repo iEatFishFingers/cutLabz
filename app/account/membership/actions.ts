@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { shopNow } from "@/lib/booking-shared";
-import { cancelMembership, subscribeToPlan } from "@/lib/customer/memberships";
+import { cancelMembership, resumeMembership, subscribeToPlan } from "@/lib/customer/memberships";
 import { requireCustomerAction } from "@/lib/customer/viewer";
 import { MEMBERSHIP_PLANS } from "@/lib/membership";
 
@@ -27,6 +27,22 @@ export async function joinPlanAction(planId: string): Promise<JoinResult> {
   } catch (err) {
     console.error("joinPlanAction failed", err);
     return { ok: false, code: "error", error: "Something went wrong. Try again." };
+  }
+}
+
+/** Undoes a cancellation of the current membership (clears cancelled_at). */
+export async function resumeMembershipAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const viewer = await requireCustomerAction().catch(() => null);
+    if (!viewer) return { ok: false, error: "Please sign in again." };
+    const res = await resumeMembership(viewer, shopNow().date);
+    revalidatePath("/account", "layout");
+    revalidatePath("/account/membership");
+    revalidatePath("/book");
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
+  } catch (err) {
+    console.error("resumeMembershipAction failed", err);
+    return { ok: false, error: "Something went wrong. Try again." };
   }
 }
 

@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import BookingCard from "@/components/account/bookings/BookingCard";
 import FlashNote from "@/components/account/bookings/FlashNote";
-import { BTN_PRIMARY, LABEL } from "@/components/account/bookings/ui";
-import { shopNow } from "@/lib/booking-shared";
+import ContactLinks from "@/components/account/ContactLinks";
+import PastBookings from "@/components/account/bookings/PastBookings";
+import { BTN_PRIMARY, LABEL, LINK } from "@/components/account/bookings/ui";
+import { addDays, shopNow } from "@/lib/booking-shared";
 import { listMyBookings } from "@/lib/customer/bookings";
 import { requireCustomer } from "@/lib/customer/viewer";
 import { BOOK_URL } from "@/lib/links";
@@ -22,7 +24,16 @@ export default async function AppointmentsPage({
 }) {
   const sp = await searchParams;
   const viewer = await requireCustomer("/account");
-  const { upcoming, past } = await listMyBookings(viewer, shopNow());
+  const now = shopNow();
+  const { upcoming, past } = await listMyBookings(viewer, now);
+  const cutoff = addDays(now.date, -14);
+  const shopCancelled = past.filter(
+    (b) =>
+      b.status === "cancelled" &&
+      b.cancelledBy === "shop" &&
+      b.cancelledAt != null &&
+      shopNow(new Date(b.cancelledAt)).date >= cutoff,
+  ).length;
 
   const flashKey =
     sp.cancelled === "1"
@@ -41,6 +52,23 @@ export default async function AppointmentsPage({
           Book a cut
         </Link>
       </div>
+
+      {shopCancelled > 0 && (
+        <div
+          role="status"
+          className="mt-6 border border-amber-300/30 bg-amber-300/5 px-4 py-3 text-sm text-white/80"
+        >
+          <p>
+            The shop cancelled {shopCancelled} of your appointments recently.{" "}
+            <a href="#past-bookings" className={LINK}>
+              See Past and cancelled
+            </a>
+          </p>
+          <p className="mt-1 text-white/60">
+            Questions? Phone or email the shop: <ContactLinks />
+          </p>
+        </div>
+      )}
 
       <div className="mt-6">
         <FlashNote kind={flashKey} />
@@ -68,18 +96,11 @@ export default async function AppointmentsPage({
       </section>
 
       {past.length > 0 && (
-        <details className="mt-10 group">
-          <summary
-            className={`flex min-h-11 cursor-pointer items-center ${LABEL} hover:text-white transition focus-visible:outline focus-visible:outline-1 focus-visible:outline-white focus-visible:outline-offset-2`}
-          >
-            Past and cancelled ({past.length})
-          </summary>
-          <ul className="mt-3 space-y-4">
-            {past.map((b) => (
-              <BookingCard key={b.id} booking={b} variant="past" />
-            ))}
-          </ul>
-        </details>
+        <PastBookings count={past.length}>
+          {past.map((b) => (
+            <BookingCard key={b.id} booking={b} variant="past" />
+          ))}
+        </PastBookings>
       )}
     </div>
   );

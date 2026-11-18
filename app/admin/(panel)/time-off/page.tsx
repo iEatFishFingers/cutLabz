@@ -10,7 +10,7 @@ import { PageHeader, PanelSkeleton } from "@/components/admin/settings/ui";
 export const metadata = { title: "Time off | Cut Labz Admin" };
 
 async function TimeOffContent() {
-  const { db } = await requireAdmin();
+  const { db, barberId } = await requireAdmin();
   const today = shopNow().date;
   const [barbers, timeOff, future] = await Promise.all([
     db.from("barbers").select("id,name,active").order("name"),
@@ -46,6 +46,7 @@ async function TimeOffContent() {
       <TimeOffForm
         barbers={(barbers.data ?? []).map((b) => ({ id: b.id as string, name: b.name as string }))}
         minDate={today}
+        defaultBarberId={barberId}
       />
       <TimeOffList rows={rows} />
       <p className="text-xs text-white/40">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BOOK_URL } from "@/lib/links";
+import { SHOP_CONTACT } from "@/lib/shop-contact";
 import Year from "@/components/Year";
 
 export const metadata: Metadata = {
@@ -38,12 +39,12 @@ export default function Privacy() {
               This policy explains how Cut Labz handles personal information when you use this
               website to create an account, book an appointment or take out a membership. You can
               reach us at{" "}
-              <a href="mailto:contact@cutlabz.co.uk" className={a}>
-                contact@cutlabz.co.uk
+              <a href={SHOP_CONTACT.emailHref} className={a}>
+                {SHOP_CONTACT.email}
               </a>{" "}
               or on{" "}
-              <a href="tel:+447913784603" className={a}>
-                +44 7913 784603
+              <a href={SHOP_CONTACT.phoneHref} className={a}>
+                {SHOP_CONTACT.phone}
               </a>
               .
             </p>

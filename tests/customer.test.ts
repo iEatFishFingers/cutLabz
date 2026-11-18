@@ -3,11 +3,17 @@ import assert from "node:assert/strict";
 import { createBooking, getSlots } from "../lib/booking-server";
 import {
   cancelMyBooking,
+  getMyBookingLimits,
   getRescheduleSlots,
   listMyBookings,
   rescheduleMyBooking,
 } from "../lib/customer/bookings";
-import { getMembershipOverview, subscribeToPlan } from "../lib/customer/memberships";
+import {
+  cancelMembership,
+  getMembershipOverview,
+  resumeMembership,
+  subscribeToPlan,
+} from "../lib/customer/memberships";
 import {
   getBookingForUser,
   insertBooking,
@@ -34,6 +40,9 @@ const input = (p: Partial<CreateBookingInput> = {}): CreateBookingInput => ({
   notes: "",
   ...p,
 });
+
+/** Where book() puts a booking with the default input. */
+const EXP = { date: WED, startMin: hm(12), barberId: "barber-1" };
 
 const u1 = viewer({ userId: "u1", email: "u1@example.com" });
 const u2 = viewer({ userId: "u2", email: "u2@example.com" });
@@ -202,7 +211,7 @@ describe("reschedule", () => {
     const { id } = await book(u1, { addonIds: ["hot-towel"] });
     const r = await rescheduleMyBooking(
       u1,
-      { bookingId: id, date: THU, startMin: hm(15), barberId: "barber-2" },
+      { bookingId: id, date: THU, startMin: hm(15), barberId: "barber-2", expected: EXP },
       NOW,
     );
     assert.ok(r.ok, JSON.stringify(r));
@@ -221,19 +230,20 @@ describe("reschedule", () => {
     assert.ok(slots.ok && slots.slots.some((s) => s.startMin === hm(12)));
     assert.ok(slots.ok && slots.slots.some((s) => s.startMin === hm(12, 15)));
     const move = { bookingId: id, date: WED, startMin: hm(12, 15), barberId: "barber-1" };
-    assert.ok((await rescheduleMyBooking(u1, move, NOW)).ok);
-    assert.ok((await rescheduleMyBooking(u1, move, NOW)).ok, "same slot again");
+    assert.ok((await rescheduleMyBooking(u1, { ...move, expected: EXP }, NOW)).ok);
+    const now15 = { ...EXP, startMin: hm(12, 15) };
+    assert.ok((await rescheduleMyBooking(u1, { ...move, expected: now15 }, NOW)).ok, "same slot again");
   });
 
   test("slot_taken when someone else holds it", async () => {
     const { id } = await book(u1);
     await book(u2, { date: THU, startMin: hm(15) });
     const to = { bookingId: id, date: THU, startMin: hm(15) };
-    const r = await rescheduleMyBooking(u1, { ...to, barberId: "barber-1" }, NOW);
+    const r = await rescheduleMyBooking(u1, { ...to, barberId: "barber-1", expected: EXP }, NOW);
     assert.ok(!r.ok && r.code === "slot_taken", JSON.stringify(r));
     assert.equal((await getBookingForUser("u1", id))?.date, WED);
     // 'any' falls through to the free barber.
-    const any = await rescheduleMyBooking(u1, { ...to, barberId: "any" }, NOW);
+    const any = await rescheduleMyBooking(u1, { ...to, barberId: "any", expected: EXP }, NOW);
     assert.ok(any.ok && any.booking.barberId === "barber-2", JSON.stringify(any));
   });
 
@@ -242,7 +252,13 @@ describe("reschedule", () => {
     if (row === "conflict") throw new Error("setup");
     const r = await rescheduleMyBooking(
       u1,
-      { bookingId: row.id, date: THU, startMin: hm(15), barberId: "barber-1" },
+      {
+        bookingId: row.id,
+        date: THU,
+        startMin: hm(15),
+        barberId: "barber-1",
+        expected: { date: "2026-11-18", startMin: hm(9), barberId: "barber-1" },
+      },
       NOW,
     );
     assert.ok(!r.ok && r.code === "too_late", JSON.stringify(r));
@@ -253,7 +269,11 @@ describe("reschedule", () => {
   test("not_found for someone else's booking; invalid / unavailable inputs", async () => {
     const { id } = await book(u1);
     const mv = (p: Record<string, unknown>, v = u1) =>
-      rescheduleMyBooking(v, { bookingId: id, date: THU, startMin: hm(15), barberId: "any", ...p }, NOW);
+      rescheduleMyBooking(
+        v,
+        { bookingId: id, date: THU, startMin: hm(15), barberId: "any", expected: EXP, ...p },
+        NOW,
+      );
     const other = await mv({}, u2);
     assert.ok(!other.ok && other.code === "not_found");
     const bad = await mv({ startMin: 1.5 });
@@ -272,7 +292,7 @@ describe("reschedule", () => {
     const { id } = await book(v, { serviceId: "core" });
     const late = await rescheduleMyBooking(
       v,
-      { bookingId: id, date: "2026-11-20", startMin: hm(15), barberId: "any" },
+      { bookingId: id, date: "2026-11-20", startMin: hm(15), barberId: "any", expected: EXP },
       NOW,
     );
     assert.ok(!late.ok && late.code === "membership", JSON.stringify(late));
@@ -280,7 +300,7 @@ describe("reschedule", () => {
     assert.deepEqual(slots, { ok: true, slots: [] });
     const ok = await rescheduleMyBooking(
       v,
-      { bookingId: id, date: THU, startMin: hm(15), barberId: "any" },
+      { bookingId: id, date: THU, startMin: hm(15), barberId: "any", expected: EXP },
       NOW,
     );
     assert.ok(ok.ok && ok.booking.isMemberCut && ok.booking.totalGBP === 0, JSON.stringify(ok));
@@ -294,7 +314,7 @@ describe("reschedule", () => {
       startMin: hm(15, 15),
       endMin: hm(15, 45),
       barberId: "barber-1",
-    });
+    }, EXP);
     assert.equal(res, "conflict");
     const b = await getBookingForUser("u1", id);
     assert.equal(b?.date, WED);
@@ -304,8 +324,159 @@ describe("reschedule", () => {
       startMin: hm(18),
       endMin: hm(18, 30),
       barberId: "barber-1",
-    });
+    }, EXP);
     assert.equal(foreign, "not_found");
+  });
+
+  test("stale: a move with an out-of-date `expected` is refused and the first move stands", async () => {
+    const { id } = await book(u1);
+    const first = await rescheduleMyBooking(
+      u1,
+      { bookingId: id, date: THU, startMin: hm(15), barberId: "barber-1", expected: EXP },
+      NOW,
+    );
+    assert.ok(first.ok, JSON.stringify(first));
+    const second = await rescheduleMyBooking(
+      u1,
+      { bookingId: id, date: THU, startMin: hm(17), barberId: "barber-1", expected: EXP },
+      NOW,
+    );
+    assert.ok(!second.ok && second.code === "stale" && /Reload the page/.test(second.error), JSON.stringify(second));
+    const b = await getBookingForUser("u1", id);
+    assert.equal(b?.date, THU);
+    assert.equal(b?.startMin, hm(15));
+    // Store-level guard too.
+    const row = await rescheduleBookingRow(
+      "u1",
+      id,
+      { date: THU, startMin: hm(17), endMin: hm(17, 30), barberId: "barber-1" },
+      EXP,
+    );
+    assert.equal(row, "stale");
+  });
+
+  test("expected is required and validated", async () => {
+    const { id } = await book(u1);
+    const base = { bookingId: id, date: THU, startMin: hm(15), barberId: "barber-1" };
+    for (const expected of [undefined, null, "x", { date: WED }, { ...EXP, startMin: 1.5 }]) {
+      const r = await rescheduleMyBooking(u1, { ...base, expected }, NOW);
+      assert.ok(!r.ok && r.code === "invalid", JSON.stringify(r));
+    }
+    assert.equal((await getBookingForUser("u1", id))?.date, WED);
+  });
+});
+
+describe("shop vs customer cancellation", () => {
+  beforeEach(resetStore);
+
+  test("customer cancel stamps cancelledBy 'customer' and cancelledAt", async () => {
+    const { id } = await book(u1);
+    assert.ok((await cancelMyBooking(u1, id, NOW)).ok);
+    const raw = await getBookingForUser("u1", id);
+    assert.equal(raw?.statusChangedBy, "customer");
+    const c = (await listMyBookings(u1, NOW)).past[0];
+    assert.equal(c.cancelledBy, "customer");
+    assert.ok(c.cancelledAt && !Number.isNaN(Date.parse(c.cancelledAt)));
+  });
+
+  test("staff stamp -> shop; no stamp -> null; active booking -> null", async () => {
+    const a = await book(u1);
+    const b = await book(u1, { startMin: hm(14) });
+    const c = await book(u1, { startMin: hm(16) });
+    const g = globalThis as unknown as { __cutlabzBookings: { id: string; status?: string; statusChangedBy?: string | null }[] };
+    const rowA = g.__cutlabzBookings.find((x) => x.id === a.id)!;
+    rowA.status = "cancelled";
+    rowA.statusChangedBy = "staff@cutlabz.co.uk";
+    g.__cutlabzBookings.find((x) => x.id === b.id)!.status = "cancelled";
+    const { upcoming, past } = await listMyBookings(u1, NOW);
+    assert.equal(past.find((x) => x.id === a.id)?.cancelledBy, "shop");
+    assert.equal(past.find((x) => x.id === b.id)?.cancelledBy, null);
+    assert.equal(upcoming.find((x) => x.id === c.id)?.cancelledBy, null);
+  });
+});
+
+describe("premium free add-ons", () => {
+  beforeEach(resetStore);
+
+  test("premium member cut with add-ons totals 0 and stores total 0", async () => {
+    const v = viewer({ userId: "u1", membership: member("premium") });
+    const r = await createBooking(input({ serviceId: "premium", addonIds: ["hot-towel", "filler"] }), NOW, v);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.booking.totalGBP, 0);
+    assert.equal((await listBookingsForDate(WED))[0].totalGBP, 0);
+  });
+
+  test("core/plus member cut with add-ons pays the add-on prices", async () => {
+    for (const plan of ["core", "plus"]) {
+      resetStore();
+      const v = viewer({ userId: "u1", membership: member(plan) });
+      const r = await createBooking(input({ serviceId: plan, addonIds: ["hot-towel", "filler"] }), NOW, v);
+      assert.ok(r.ok, JSON.stringify(r));
+      assert.equal(r.booking.totalGBP, 10, plan);
+    }
+  });
+
+  test("premium member's one-off booking still pays for add-ons", async () => {
+    const v = viewer({ userId: "u1", membership: member("premium") });
+    const r = await createBooking(input({ serviceId: "haircut", addonIds: ["hot-towel"] }), NOW, v);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.booking.totalGBP, 25);
+  });
+
+  test("the client cannot force freeAddons", async () => {
+    const v = viewer({ userId: "u1", membership: member("core") });
+    const r = await createBooking(
+      { ...input({ serviceId: "core", addonIds: ["hot-towel"] }), freeAddons: true, opts: { freeAddons: true }, totalGBP: 0 },
+      NOW,
+      v,
+    );
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.booking.totalGBP, 5);
+    resetStore();
+    const p = await createBooking(
+      { ...input({ serviceId: "haircut", addonIds: ["hot-towel"] }), freeAddons: true },
+      NOW,
+      u1,
+    );
+    assert.ok(p.ok && p.booking.totalGBP === 25, JSON.stringify(p));
+  });
+});
+
+describe("booking limits", () => {
+  beforeEach(resetStore);
+
+  test("getMyBookingLimits counts upcoming active bookings and the member cut", async () => {
+    assert.deepEqual(await getMyBookingLimits(u1, NOW), { upcomingCount: 0, upcomingMemberCut: null });
+    const v = viewer({ userId: "u1", membership: member("core") });
+    await book(v, { serviceId: "core", startMin: hm(13) });
+    await book(v, { startMin: hm(15) });
+    await seed({ date: "2026-11-17", startMin: hm(9), userId: "u1" }); // already started
+    assert.deepEqual(await getMyBookingLimits(v, NOW), {
+      upcomingCount: 2,
+      upcomingMemberCut: { date: WED, startMin: hm(13) },
+    });
+    assert.equal((await getMyBookingLimits(u2, NOW)).upcomingCount, 0);
+  });
+
+  test("clearer limit messages", async () => {
+    for (const h of [12, 13, 14]) await book(u1, { startMin: hm(h) });
+    const r = await createBooking(input({ startMin: hm(15) }), NOW, u1);
+    assert.ok(
+      !r.ok &&
+        r.error ===
+          "You can hold up to 3 upcoming bookings. To book another, cancel one that is more than 24 hours away.",
+      JSON.stringify(r),
+    );
+    resetStore();
+    const v = viewer({ userId: "u1", membership: member("core") });
+    await book(v, { serviceId: "core" });
+    const m = await createBooking(input({ serviceId: "core", startMin: hm(14) }), NOW, v);
+    assert.ok(
+      !m.ok &&
+        m.error ===
+          "You already have an upcoming member cut. It has to take place, or be cancelled more than 24 hours ahead, before you can book another.",
+      JSON.stringify(m),
+    );
   });
 });
 
@@ -334,6 +505,22 @@ describe("memberships", () => {
     const o = await getMembershipOverview({ userId: "u1" }, "2026-12-17");
     assert.equal(o.current?.plan, "plus");
     assert.equal(o.past.length, 1);
+  });
+
+  test("resumeMembership clears cancelled_at; idempotent; errors with none", async () => {
+    const none = await resumeMembership({ userId: "u1" }, "2026-11-17");
+    assert.ok(!none.ok && none.error === "You don't have a cancelled membership to keep.");
+    assert.ok((await subscribeToPlan({ userId: "u1" }, "core", "2026-11-17")).ok);
+    assert.ok((await cancelMembership({ userId: "u1" }, "2026-11-18")).ok);
+    assert.ok((await getMembershipOverview({ userId: "u1" }, "2026-11-18")).current?.cancelledAt);
+    assert.ok((await resumeMembership({ userId: "u1" }, "2026-11-18")).ok);
+    assert.equal((await getMembershipOverview({ userId: "u1" }, "2026-11-18")).current?.cancelledAt, null);
+    assert.ok((await resumeMembership({ userId: "u1" }, "2026-11-18")).ok, "idempotent");
+    // Once the period has ended there is nothing to resume.
+    const ended = await resumeMembership({ userId: "u1" }, "2026-12-17");
+    assert.ok(!ended.ok);
+    // Another user is unaffected.
+    assert.ok(!(await resumeMembership({ userId: "u2" }, "2026-11-18")).ok);
   });
 
   test("invalid plans: unknown, one-off service, non-string", async () => {

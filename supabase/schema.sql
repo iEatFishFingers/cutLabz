@@ -267,3 +267,8 @@ alter table public.bookings
 -- Walk-in/admin bookings (user_id null) are idempotent on request_key too.
 create unique index if not exists bookings_admin_request_key_idx
   on public.bookings (request_key) where user_id is null and request_key is not null;
+-- Staff "contacted the customer" stamp for shop-cancelled bookings.
+alter table public.bookings add column if not exists contacted_at timestamptz;
+
+-- Applied to the live project: when the shop contacted the customer about a booking.
+alter table public.bookings add column if not exists contacted_at timestamptz;

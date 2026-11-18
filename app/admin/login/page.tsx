@@ -15,10 +15,21 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ [k
       <div className="w-full max-w-sm bg-[#0a0a0a] border border-white/10 p-6 sm:p-8">
         <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Admin</p>
         <h1 className="text-2xl font-semibold mt-1 mb-8">Cut Labz</h1>
-        <Suspense fallback={<LoginForm idPrefix="login-fallback" inert />}>
+        <Suspense fallback={<LoginSkeleton />}>
           <LoginGate searchParams={searchParams} />
         </Suspense>
       </div>
+    </div>
+  );
+}
+
+function LoginSkeleton() {
+  return (
+    <div role="status" aria-label="Loading sign in" className="space-y-4 animate-pulse">
+      <div className="h-12 border border-white/10 bg-white/[0.04]" />
+      <div className="h-12 border border-white/10 bg-white/[0.04]" />
+      <div className="h-12 bg-white/[0.1]" />
+      <span className="sr-only">Loading...</span>
     </div>
   );
 }

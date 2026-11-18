@@ -54,14 +54,24 @@ function TimeSelect({
   );
 }
 
-export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
+export default function HoursEditor({
+  barbers,
+  initialBarberId,
+}: {
+  barbers: BarberHours[];
+  initialBarberId?: string | null;
+}) {
   const [drafts, setDrafts] = useState<Record<string, WeekSchedule>>(() =>
     Object.fromEntries(barbers.map((b) => [b.id, clone(b.schedule)])),
   );
   const [saved, setSaved] = useState<Record<string, string>>(() =>
     Object.fromEntries(barbers.map((b) => [b.id, JSON.stringify(b.schedule)])),
   );
-  const [selected, setSelected] = useState(barbers[0].id);
+  const [selected, setSelected] = useState(
+    initialBarberId && barbers.some((b) => b.id === initialBarberId)
+      ? initialBarberId
+      : barbers[0].id,
+  );
   const [copyFrom, setCopyFrom] = useState<number | null>(null);
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const [justOpened, setJustOpened] = useState<string[]>([]);
@@ -132,6 +142,7 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
       </div>
 
       <form action={action} className={CARD}>
+        <h2 className="mb-4 text-lg text-white">Editing {selectedName}&apos;s hours</h2>
         <input type="hidden" name="barberId" value={selected} />
         <input type="hidden" name="schedule" value={serialized} />
 
@@ -320,7 +331,7 @@ export default function HoursEditor({ barbers }: { barbers: BarberHours[] }) {
           Copying to another barber fills their draft and switches to them; press Save there to
           apply. Barbers with unsaved changes are marked (unsaved).
         </p>
-        <ResultMessage result={result} />
+        <ResultMessage result={result} warningLink={{ href: "/admin", label: "View clashes" }} />
       </form>
     </div>
   );

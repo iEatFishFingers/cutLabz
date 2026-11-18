@@ -5,6 +5,8 @@ import { requireAdminAction } from "@/lib/admin/auth";
 import {
   changeBookingStatus,
   createAdminBooking,
+  getAttentionItems,
+  markBookingContacted,
   searchAdminBookings,
 } from "@/lib/admin/bookings";
 import type {
@@ -28,13 +30,35 @@ export async function setBookingStatusAction(
 
 export async function searchBookingsAction(
   query: string,
-): Promise<{ ok: true; bookings: AdminBooking[] } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; bookings: AdminBooking[]; truncated: boolean } | { ok: false; error: string }
+> {
   const session = await requireAdminAction();
   try {
-    return { ok: true, bookings: await searchAdminBookings(session, query) };
+    const res = await searchAdminBookings(session, query);
+    return { ok: true, bookings: res.bookings, truncated: res.truncated };
   } catch {
     return { ok: false, error: "Could not search bookings." };
   }
+}
+
+export async function getAttentionAction(): Promise<
+  | { ok: true; clashes: AdminBooking[]; unresolvedPast: AdminBooking[]; toContact: AdminBooking[] }
+  | { ok: false; error: string }
+> {
+  const session = await requireAdminAction();
+  try {
+    return { ok: true, ...(await getAttentionItems(session)) };
+  } catch {
+    return { ok: false, error: "Could not load bookings that need attention." };
+  }
+}
+
+export async function markContactedAction(id: string): Promise<AdminActionResult> {
+  const session = await requireAdminAction();
+  const res = await markBookingContacted(session, id);
+  if (res.ok) revalidatePath("/admin");
+  return res;
 }
 
 export async function createBookingAction(

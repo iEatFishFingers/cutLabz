@@ -44,8 +44,8 @@ export default function BarberStep({ draft, update, hideHeader }: Props) {
   // Preselect "Any available" when entering with nothing chosen (still changeable).
   const { barberId } = draft;
   useEffect(() => {
-    if (barberId == null) update({ barberId: "any" });
-  }, [barberId, update]);
+    if (barberId == null && !hideHeader) update({ barberId: "any" });
+  }, [barberId, hideHeader, update]);
 
   return (
     <section>

@@ -135,7 +135,7 @@ describe("customer lifecycle (live DB)", { skip: SKIP }, () => {
     const [row] = (await listMyBookings(va, shopNow())).upcoming;
     const steal = await cancelMyBooking(vb, row.id, shopNow());
     assert.ok(!steal.ok && steal.code === "not_found", JSON.stringify(steal));
-    const move = await rescheduleMyBooking(vb, { bookingId: row.id, date: nextOpen(), startMin: hm(13), barberId: "barber-1" }, shopNow());
+    const move = await rescheduleMyBooking(vb, { bookingId: row.id, date: nextOpen(), startMin: hm(13), barberId: "barber-1", expected: { date: row.date, startMin: row.startMin, barberId: row.barberId } }, shopNow());
     assert.ok(!move.ok && move.code === "not_found", JSON.stringify(move));
   });
 
@@ -176,17 +176,17 @@ describe("customer lifecycle (live DB)", { skip: SKIP }, () => {
     });
     assert.notEqual(blocker, "conflict");
 
-    const clash = await rescheduleMyBooking(viewer, { bookingId: mine.id, date: target, startMin: hm(14), barberId: "barber-1" }, shopNow());
+    const clash = await rescheduleMyBooking(viewer, { bookingId: mine.id, date: target, startMin: hm(14), barberId: "barber-1", expected: { date, startMin: hm(12), barberId: "barber-1" } }, shopNow());
     assert.ok(!clash.ok && clash.code === "slot_taken", JSON.stringify(clash));
     const still = (await listMyBookings(viewer, shopNow())).upcoming[0];
     assert.equal(still.date, date);
     assert.equal(still.startMin, hm(12));
 
     // Shifting inside your own old slot is allowed (it doesn't block itself).
-    const nudge = await rescheduleMyBooking(viewer, { bookingId: mine.id, date, startMin: hm(12, 15), barberId: "barber-1" }, shopNow());
+    const nudge = await rescheduleMyBooking(viewer, { bookingId: mine.id, date, startMin: hm(12, 15), barberId: "barber-1", expected: { date, startMin: hm(12), barberId: "barber-1" } }, shopNow());
     assert.ok(nudge.ok, JSON.stringify(nudge));
 
-    const free = await rescheduleMyBooking(viewer, { bookingId: mine.id, date: target, startMin: hm(15), barberId: "barber-1" }, shopNow());
+    const free = await rescheduleMyBooking(viewer, { bookingId: mine.id, date: target, startMin: hm(15), barberId: "barber-1", expected: { date, startMin: hm(12, 15), barberId: "barber-1" } }, shopNow());
     assert.ok(free.ok, JSON.stringify(free));
     if (free.ok) {
       assert.equal(free.booking.id, mine.id);
@@ -208,7 +208,7 @@ describe("customer lifecycle (live DB)", { skip: SKIP }, () => {
     const id = (row as { id: string }).id;
     const c = await cancelMyBooking(viewer, id, now);
     assert.ok(!c.ok && c.code === "too_late", JSON.stringify(c));
-    const m = await rescheduleMyBooking(viewer, { bookingId: id, date: nextOpen(), startMin: hm(13), barberId: "barber-1" }, now);
+    const m = await rescheduleMyBooking(viewer, { bookingId: id, date: nextOpen(), startMin: hm(13), barberId: "barber-1", expected: { date: addDays(now.date, 1), startMin: 0, barberId: "barber-2" } }, now);
     assert.ok(!m.ok && m.code === "too_late", JSON.stringify(m));
   });
 

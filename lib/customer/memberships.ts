@@ -194,6 +194,69 @@ export async function cancelMembership(
   return { ok: true, membership: toMembership((data?.[0] as MembershipRow | undefined) ?? current) };
 }
 
+export type ResumeMembershipResult =
+  | { ok: true; membership: Membership }
+  | { ok: false; code: "no_membership" | "error"; error: string };
+
+/**
+ * Undoes a cancellation: clears cancelled_at on the viewer's current (not yet ended)
+ * membership. Idempotent: resuming a membership that isn't cancelled returns ok.
+ */
+export async function resumeMembership(
+  viewer: { userId: string },
+  today: string,
+): Promise<ResumeMembershipResult> {
+  const none = {
+    ok: false,
+    code: "no_membership",
+    error: "You don't have a cancelled membership to keep.",
+  } as const;
+  const failed = {
+    ok: false,
+    code: "error",
+    error: "Couldn't update your membership. Try again.",
+  } as const;
+
+  if ((await backend()) === "memory") {
+    const m = mem.find((x) => x.userId === viewer.userId && x.startsOn <= today && today <= x.endsOn);
+    if (!m) return none;
+    m.cancelledAt = null;
+    return { ok: true, membership: toPublic(m) };
+  }
+
+  const { getSupabaseAdmin } = await import("../supabase/admin");
+  const db = getSupabaseAdmin();
+  const { data: rows, error: readErr } = await db
+    .from("memberships")
+    .select(COLUMNS)
+    .eq("user_id", viewer.userId)
+    .lte("starts_on", today)
+    .gte("ends_on", today)
+    .limit(1);
+  if (readErr) {
+    console.error("membership read failed", readErr.code, readErr.message);
+    return failed;
+  }
+  const current = rows?.[0] as MembershipRow | undefined;
+  if (!current) return none;
+  if (!current.cancelled_at) return { ok: true, membership: toMembership(current) };
+
+  const { data, error } = await db
+    .from("memberships")
+    .update({ cancelled_at: null })
+    .eq("id", current.id)
+    .eq("user_id", viewer.userId)
+    .select(COLUMNS);
+  if (error) {
+    console.error("membership resume failed", error.code, error.message);
+    return failed;
+  }
+  return {
+    ok: true,
+    membership: toMembership((data?.[0] as MembershipRow | undefined) ?? { ...current, cancelled_at: null }),
+  };
+}
+
 /** Memory-store twin of the FK cascade on account deletion (no-op with Supabase). */
 export async function deleteMembershipsForUserInMemory(userId: string): Promise<void> {
   if ((await backend()) !== "memory") return;

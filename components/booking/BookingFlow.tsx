@@ -197,6 +197,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewLink, setReviewLink] = useState<{ href: string; label: string } | null>(null);
+  const [reviewUncertain, setReviewUncertain] = useState(false);
   const [staleMenu, setStaleMenu] = useState(false);
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -222,7 +223,12 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
     // A saved choice the viewer cannot use (signed in as someone else, plan ended,
     // or not a member) is reset instead of failing at the server.
     const svc = catalog.services.find((s) => s.id === d.serviceId);
-    if (d.serviceId && (!svc || !canUseService(viewer, svc))) {
+    if (
+      d.serviceId &&
+      (!svc ||
+        !canUseService(viewer, svc) ||
+        (svc.kind === "membership" && viewer.limits?.upcomingMemberCut != null))
+    ) {
       d = { ...d, serviceId: null, addonIds: [], startMin: null };
     }
     const memberCut = svc?.kind === "membership";
@@ -388,6 +394,9 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
         requestKey: getRequestKey(),
       });
       const code: string = res.ok ? "ok" : res.code;
+      // Only a network/unknown failure leaves "did it go through?" open; a coded
+      // refusal already says what happened.
+      setReviewUncertain(!res.ok && (!code || code === "error"));
       if (res.ok) {
         clearRequestKey();
         setConfirmed(res.booking);
@@ -430,6 +439,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
         setReviewError(res.error);
       }
     } catch {
+      setReviewUncertain(true);
       setReviewError("Something went wrong. Check your connection and try again.");
     } finally {
       submittingRef.current = false;
@@ -560,6 +570,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
                     error={staleMenu ? "Our menu just changed. Reload to see the latest." : reviewError}
                     onReload={staleMenu ? reloadMenu : undefined}
                     link={staleMenu ? null : reviewLink}
+                    uncertain={reviewUncertain}
                   />}
               </motion.div>
             </AnimatePresence>

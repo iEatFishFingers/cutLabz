@@ -29,8 +29,15 @@ function formatDate(date: string): string {
   }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
-function Row({ row }: { row: TimeOffRow }) {
-  const [confirming, setConfirming] = useState(false);
+function Row({
+  row,
+  confirming,
+  setConfirming,
+}: {
+  row: TimeOffRow;
+  confirming: boolean;
+  setConfirming: (open: boolean) => void;
+}) {
   const [result, action, pending] = useActionState<ActionResult | null, FormData>(
     deleteTimeOff,
     null,
@@ -91,6 +98,7 @@ function Row({ row }: { row: TimeOffRow }) {
 }
 
 export default function TimeOffList({ rows }: { rows: TimeOffRow[] }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   const upcoming = rows.filter((r) => r.upcoming);
   const past = rows.filter((r) => !r.upcoming).reverse();
   return (
@@ -102,7 +110,12 @@ export default function TimeOffList({ rows }: { rows: TimeOffRow[] }) {
         ) : (
           <ul className={`${CARD} divide-y divide-white/10`}>
             {upcoming.map((r) => (
-              <Row key={r.id} row={r} />
+              <Row
+                key={r.id}
+                row={r}
+                confirming={openId === r.id}
+                setConfirming={(o) => setOpenId(o ? r.id : null)}
+              />
             ))}
           </ul>
         )}
@@ -114,7 +127,12 @@ export default function TimeOffList({ rows }: { rows: TimeOffRow[] }) {
         ) : (
           <ul className={`${CARD} divide-y divide-white/10`}>
             {past.map((r) => (
-              <Row key={r.id} row={r} />
+              <Row
+                key={r.id}
+                row={r}
+                confirming={openId === r.id}
+                setConfirming={(o) => setOpenId(o ? r.id : null)}
+              />
             ))}
           </ul>
         )}

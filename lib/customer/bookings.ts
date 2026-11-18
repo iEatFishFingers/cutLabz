@@ -12,7 +12,9 @@ import {
 import {
   isInWindow,
   isOpenDay,
+  addDays,
   isValidDateString,
+  shopNow,
   type SlotsResult,
 } from "../booking-shared";
 import type { ServerCatalog } from "../catalog";
@@ -23,6 +25,7 @@ import {
   cancelBooking,
   getBookingForUser,
   isActiveStatus,
+  listActiveBookingsForUser,
   listBookingsForDate,
   listBookingsForUser,
   rescheduleBookingRow,
@@ -51,10 +54,16 @@ export type MyBooking = {
   /** Active and at least 24h before the start: the customer may cancel/reschedule online. */
   canSelfServe: boolean;
   started: boolean;
+  /** Who cancelled: the customer, the shop (a staff stamp), or null (not cancelled / unknown, old rows). */
+  cancelledBy: "customer" | "shop" | null;
+  /** ISO time of cancellation, when known. */
+  cancelledAt: string | null;
 };
 
 export const TOO_LATE_MESSAGE =
   "Cancellations within 24 hours aren't available online. Please contact the shop.";
+const STALE_MESSAGE =
+  "This appointment was changed in another tab or window. Reload the page to see its current time.";
 const TOO_LATE_RESCHEDULE =
   "Changes within 24 hours aren't available online. Please contact the shop.";
 
@@ -82,6 +91,32 @@ function toMyBooking(b: Booking, catalog: ServerCatalog, now: Now): MyBooking {
     isMemberCut: !!b.membershipId || isMembershipService(catalog, b.serviceId),
     canSelfServe: active && canSelfServe(b.date, b.startMin, now),
     started,
+    cancelledBy:
+      status !== "cancelled" || !b.statusChangedBy
+        ? null
+        : b.statusChangedBy === "customer"
+          ? "customer"
+          : "shop",
+    cancelledAt: b.cancelledAt ?? null,
+  };
+}
+
+/** Upcoming = active and not started. Lets the booking page warn before the customer fills in the flow. */
+export async function getMyBookingLimits(
+  viewer: { userId: string },
+  now: Now = shopNow(),
+): Promise<{ upcomingCount: number; upcomingMemberCut: { date: string; startMin: number } | null }> {
+  const [catalog, rows] = await Promise.all([
+    loadCatalog(),
+    listActiveBookingsForUser(viewer.userId, addDays(now.date, -1)),
+  ]);
+  const upcoming = rows
+    .filter((b) => !hasStarted(b.date, b.startMin, now))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startMin - b.startMin);
+  const cut = upcoming.find((b) => !!b.membershipId || isMembershipService(catalog, b.serviceId));
+  return {
+    upcomingCount: upcoming.length,
+    upcomingMemberCut: cut ? { date: cut.date, startMin: cut.startMin } : null,
   };
 }
 
@@ -200,6 +235,7 @@ export type RescheduleResult =
         | "membership"
         | "invalid"
         | "limit"
+        | "stale"
         | "error";
       error: string;
     };
@@ -214,6 +250,25 @@ export async function rescheduleMyBooking(
   if (!prep.ok) return prep;
   const { booking, catalog } = prep;
   const { date, startMin, barberId } = input;
+
+  const exp = input.expected;
+  if (
+    !isObject(exp) ||
+    typeof exp.date !== "string" ||
+    exp.date.length > 10 ||
+    typeof exp.startMin !== "number" ||
+    !Number.isInteger(exp.startMin) ||
+    typeof exp.barberId !== "string" ||
+    exp.barberId.length > 64
+  )
+    return { ok: false, code: "invalid", error: "Invalid request." };
+  const expected = { date: exp.date, startMin: exp.startMin, barberId: exp.barberId };
+  if (
+    booking.date !== expected.date ||
+    booking.startMin !== expected.startMin ||
+    booking.barberId !== expected.barberId
+  )
+    return { ok: false, code: "stale", error: STALE_MESSAGE };
 
   if (typeof date !== "string" || date.length > 10 || !isValidDateString(date))
     return { ok: false, code: "invalid", error: "Choose a valid date." };
@@ -257,8 +312,9 @@ export async function rescheduleMyBooking(
       startMin,
       endMin: startMin + durationMin,
       barberId: candidate,
-    });
+    }, expected);
     if (res === "conflict") continue;
+    if (res === "stale") return { ok: false, code: "stale", error: STALE_MESSAGE };
     if (res === "limit")
       return { ok: false, code: "limit", error: BOOKING_LIMIT_MESSAGE };
     if (res === "not_found")

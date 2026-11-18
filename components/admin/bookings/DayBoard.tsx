@@ -24,6 +24,21 @@ export type BoardBarber = {
   onLeave: boolean;
 };
 
+const SHORT_STATUS: Record<string, string> = {
+  pending: "Pend",
+  completed: "Done",
+  no_show: "No-show",
+  cancelled: "Canc",
+};
+
+// Coloured left edge so the status reads even when the tile is too short for text.
+const STATUS_BORDER: Record<string, string> = {
+  completed: "border-l-green-500",
+  no_show: "border-l-amber-500",
+  cancelled: "border-l-red-500",
+  pending: "border-l-white/70",
+};
+
 function Column({
   barber,
   date,
@@ -95,7 +110,7 @@ function Column({
               type="button"
               onClick={(e) => onSelect(b.id, e.currentTarget)}
               aria-pressed={sel}
-              className={`absolute overflow-hidden border px-2 py-1 text-left text-xs leading-tight transition ${
+              className={`absolute overflow-hidden border border-l-4 px-2 py-1 text-left text-xs leading-tight transition ${STATUS_BORDER[b.status] ?? ""} ${
                 sel
                   ? "z-20 bg-white text-black border-white"
                   : clash
@@ -114,6 +129,11 @@ function Column({
                 <span className="truncate">
                   {formatTime(b.startMin)}–{formatTime(b.endMin)}
                 </span>
+                {b.status !== "confirmed" && (
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em]">
+                    {SHORT_STATUS[b.status] ?? ""}
+                  </span>
+                )}
                 {clash && (
                   <span
                     className={`ml-auto inline-flex shrink-0 items-center gap-0.5 border px-1 text-[9px] font-semibold uppercase tracking-[0.1em] ${

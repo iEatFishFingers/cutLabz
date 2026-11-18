@@ -26,10 +26,18 @@ export type Booking = {
   reference?: string;
   /** Idempotency key supplied by the booking UI (unique per user). */
   requestKey?: string | null;
+  /** ISO time the booking was cancelled (null when never cancelled). */
+  cancelledAt?: string | null;
+  /** Who last changed the status: "customer" or a staff email; null on old rows. */
+  statusChangedBy?: string | null;
 };
 
 /** Raised by the DB trigger enforce_booking_cap (and mirrored by the memory store). */
-export const BOOKING_LIMIT_MESSAGE = "You can hold up to 3 upcoming bookings. Cancel or complete one first.";
+export const BOOKING_LIMIT_MESSAGE =
+  "You can hold up to 3 upcoming bookings. To book another, cancel one that is more than 24 hours away.";
+
+export const MEMBER_CUT_LIMIT_MESSAGE =
+  "You already have an upcoming member cut. It has to take place, or be cancelled more than 24 hours ahead, before you can book another.";
 
 export function isBookingLimitError(error: { message?: string; code?: string } | null | undefined): boolean {
   return !!error && (error.message ?? "").includes("booking_limit_reached");
@@ -40,6 +48,8 @@ export const isActiveStatus = (s: string | undefined): boolean =>
   s === undefined || s === "pending" || s === "confirmed";
 
 export type RescheduleTarget = { date: string; startMin: number; endMin: number; barberId: string };
+/** The slot the caller believes the booking currently holds. */
+export type RescheduleExpected = { date: string; startMin: number; barberId: string };
 
 type Row = {
   id: string;
@@ -60,10 +70,12 @@ type Row = {
   membership_id?: string | null;
   status?: string;
   request_key?: string | null;
+  cancelled_at?: string | null;
+  status_changed_by?: string | null;
 };
 
 const FULL_COLUMNS =
-  "id, reference, booking_date, start_min, end_min, barber_id, service_id, addon_ids, name, email, phone, notes, total_pence, created_at, user_id, membership_id, status, request_key";
+  "id, reference, booking_date, start_min, end_min, barber_id, service_id, addon_ids, name, email, phone, notes, total_pence, created_at, user_id, membership_id, status, request_key, cancelled_at, status_changed_by";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fromRow(r: Row): Booking {
@@ -86,6 +98,8 @@ function fromRow(r: Row): Booking {
     status: r.status ?? "confirmed",
     reference: r.reference,
     requestKey: r.request_key ?? null,
+    cancelledAt: r.cancelled_at ?? null,
+    statusChangedBy: r.status_changed_by ?? null,
   };
 }
 
@@ -271,7 +285,12 @@ export async function cancelBooking(userId: string, id: string): Promise<boolean
   const { getSupabaseAdmin } = await import("./supabase/admin");
   const { data, error } = await getSupabaseAdmin()
     .from("bookings")
-    .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      status_changed_at: new Date().toISOString(),
+      status_changed_by: "customer",
+    })
     .eq("user_id", userId)
     .eq("id", id)
     .in("status", [...ACTIVE_STATUSES])
@@ -288,9 +307,10 @@ export async function rescheduleBookingRow(
   userId: string,
   id: string,
   to: RescheduleTarget,
-): Promise<Booking | "conflict" | "not_found" | "limit"> {
+  expected: RescheduleExpected,
+): Promise<Booking | "conflict" | "not_found" | "limit" | "stale"> {
   if ((await backend()) === "memory") {
-    return (await import("./store-memory")).rescheduleBookingRow(userId, id, to);
+    return (await import("./store-memory")).rescheduleBookingRow(userId, id, to, expected);
   }
   if (!UUID_RE.test(id)) return "not_found";
   const { getSupabaseAdmin } = await import("./supabase/admin");
@@ -304,6 +324,10 @@ export async function rescheduleBookingRow(
     })
     .eq("user_id", userId)
     .eq("id", id)
+    // Optimistic check: only move the booking if it is still where the page thought.
+    .eq("booking_date", expected.date)
+    .eq("start_min", expected.startMin)
+    .eq("barber_id", expected.barberId)
     .in("status", [...ACTIVE_STATUSES])
     .select(FULL_COLUMNS);
   if (error) {
@@ -313,7 +337,10 @@ export async function rescheduleBookingRow(
     console.error("booking reschedule failed", error.code, error.message);
     throw new Error("Could not reschedule booking.");
   }
-  return data?.[0] ? fromRow(data[0] as Row) : "not_found";
+  if (data?.[0]) return fromRow(data[0] as Row);
+  // No row changed: either it's closed/gone, or it moved since the page loaded.
+  const current = await getBookingForUser(userId, id);
+  return current && isActiveStatus(current.status) ? "stale" : "not_found";
 }
 
 // ---------- Account deletion ----------
@@ -331,7 +358,13 @@ export async function cancelUpcomingBookingsForUser(
   }
   const { getSupabaseAdmin } = await import("./supabase/admin");
   const db = getSupabaseAdmin();
-  const stamp = { status: "cancelled", cancelled_at: new Date().toISOString() };
+  const at = new Date().toISOString();
+  const stamp = {
+    status: "cancelled",
+    cancelled_at: at,
+    status_changed_at: at,
+    status_changed_by: "customer",
+  };
   const later = await db
     .from("bookings")
     .update(stamp)

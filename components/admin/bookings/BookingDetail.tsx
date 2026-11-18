@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setBookingStatusAction } from "@/app/admin/(panel)/bookings/actions";
 import { formatTime } from "@/lib/availability";
-import { formatDate, formatGBP } from "@/lib/booking-shared";
-import { statusLabel, type AdminBooking, type BookingStatus } from "@/lib/admin/bookings-shared";
+import { formatDate, formatGBP, shopNow } from "@/lib/booking-shared";
+import { hasStarted } from "@/lib/membership";
+import {
+  allowedStatusChanges,
+  statusLabel,
+  type AdminBooking,
+  type BookingStatus,
+} from "@/lib/admin/bookings-shared";
 import { AlertIcon, CheckIcon, EyeOffIcon, StatusIcon, XIcon } from "../icons";
 import { classifyThrown, FailureMessage, type ActionFailure } from "./actionErrors";
 
@@ -30,6 +36,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 type Confirm = null | "cancelled" | "no_show";
 
+const subscribeNever = () => () => {};
+const nowSnapshot = (): string => {
+  const n = shopNow();
+  return `${n.date}|${n.min}`;
+};
+
 export default function BookingDetail({
   booking,
   barberName,
@@ -50,6 +62,16 @@ export default function BookingDetail({
   useEffect(() => headingRef.current?.focus(), []);
 
   const expected = b.status === "unknown" ? b.statusRaw : b.status;
+
+  // Shop-local clock, read after hydration only (null on the server render).
+  const nowKey = useSyncExternalStore(subscribeNever, nowSnapshot, () => null);
+  const started = (() => {
+    if (!nowKey) return null;
+    const [date, min] = nowKey.split("|");
+    return hasStarted(b.date, b.startMin, { date, min: Number(min) });
+  })();
+  const allowed: BookingStatus[] =
+    b.status === "unknown" || started === null ? [] : allowedStatusChanges(b.status, started);
 
   const change = (status: BookingStatus) => {
     setFailure(null);
@@ -159,9 +181,16 @@ export default function BookingDetail({
           </Row>
           <Row label="Reference">{b.reference}</Row>
         </dl>
-        {b.statusChangedBy && changedOn && (
+        {changedOn && (
           <p className="mt-2 text-xs text-white/50">
-            Last changed by <bdi>{b.statusChangedBy}</bdi> on {changedOn}
+            Last changed
+            {b.statusChangedBy?.trim() ? <> by <span dir="auto">{b.statusChangedBy.trim()}</span></> : null} on{" "}
+            {changedOn}
+          </p>
+        )}
+        {b.status === "cancelled" && b.cancelledBy && (
+          <p className="mt-1 text-xs text-white/50">
+            Cancelled by {b.cancelledBy === "customer" ? "the customer" : "the shop"}
           </p>
         )}
       </div>
@@ -208,17 +237,17 @@ export default function BookingDetail({
           </div>
         ) : (
           <div className="flex flex-wrap gap-3">
-            {b.status === "pending" && (
-              <button type="button" disabled={pending} onClick={() => change("confirmed")} className={BTN_PRIMARY}>
-                Confirm
-              </button>
+            {allowed.length === 0 && (
+              <p className="text-xs text-white/50">
+                {started === null ? "Checking..." : "No changes are possible for this booking."}
+              </p>
             )}
-            {b.status !== "completed" && b.status !== "cancelled" && (
+            {allowed.includes("completed") && (
               <button type="button" disabled={pending} onClick={() => change("completed")} className={BTN_PRIMARY}>
-                <CheckIcon /> Mark completed
+                <CheckIcon /> {b.status === "no_show" ? "Change to completed" : "Mark completed"}
               </button>
             )}
-            {b.status !== "no_show" && b.status !== "cancelled" && (
+            {allowed.includes("no_show") && (
               <button
                 type="button"
                 disabled={pending}
@@ -228,15 +257,15 @@ export default function BookingDetail({
                 }}
                 className={BTN_WARN}
               >
-                <EyeOffIcon /> No-show
+                <EyeOffIcon /> {b.status === "completed" ? "Change to no-show" : "Mark no-show"}
               </button>
             )}
-            {(b.status === "cancelled" || b.status === "completed" || b.status === "no_show") && (
+            {allowed.includes("confirmed") && (
               <button type="button" disabled={pending} onClick={() => change("confirmed")} className={BTN_SECONDARY}>
                 Reopen
               </button>
             )}
-            {b.status !== "cancelled" && (
+            {allowed.includes("cancelled") && (
               <button
                 type="button"
                 disabled={pending}

@@ -104,9 +104,17 @@ export function resolveAddons(catalog: ClientCatalog, addonIds: string[]): Addon
   return catalog.addons.filter((a) => addonIds.includes(a.id));
 }
 
-/** Premium membership includes add-ons for free. */
-export function addonPrice(service: Service | undefined, addon: Addon): number {
-  return service?.id === "premium" ? 0 : addon.priceGBP;
+/** The membership plan whose own member cut includes every add-on for free. */
+export const FREE_ADDONS_PLAN = "premium";
+
+export function planIncludesFreeAddons(planId: string | null | undefined): boolean {
+  return planId === FREE_ADDONS_PLAN;
+}
+
+/** Add-on price. `freeAddons` is true only for a Premium member booking their own member cut
+ *  (the server decides this from the signed-in membership, never from client input). */
+export function addonPrice(_service: Service | undefined, addon: Addon, freeAddons = false): number {
+  return freeAddons ? 0 : addon.priceGBP;
 }
 
 /** Authoritative duration + price. Server always recomputes with this. */
@@ -114,13 +122,15 @@ export function quote(
   catalog: ClientCatalog,
   serviceId: string | null,
   addonIds: string[],
+  opts?: { freeAddons?: boolean },
 ): { durationMin: number; totalGBP: number } | null {
   const service = getService(catalog, serviceId);
   if (!service) return null;
   const chosen = resolveAddons(catalog, addonIds);
+  const free = opts?.freeAddons === true;
   return {
     durationMin: service.durationMin + chosen.reduce((n, a) => n + a.extraMin, 0),
-    totalGBP: service.priceGBP + chosen.reduce((n, a) => n + addonPrice(service, a), 0),
+    totalGBP: service.priceGBP + chosen.reduce((n, a) => n + addonPrice(service, a, free), 0),
   };
 }
 

@@ -43,9 +43,44 @@ export type AdminBooking = {
   paymentStatus: string;
   /** ISO timestamp of the last admin status change (null if never changed). */
   statusChangedAt: string | null;
-  /** Email of the admin who made it. */
+  /** Email of the admin who made it ("customer" when the customer cancelled). */
   statusChangedBy: string | null;
+  /** Who cancelled it (null unless status is cancelled and we can tell). */
+  cancelledBy: "customer" | "shop" | null;
+  /** ISO timestamp when staff marked a shop-cancelled booking as contacted. */
+  contactedAt: string | null;
+  /** Rota clash (time off / outside hours) for an upcoming booking; null when not computed. */
+  clash: boolean | null;
 };
+
+/** Customer cancels stamp status_changed_by = 'customer'; any other non-empty value is staff. */
+export function cancelledByOf(
+  status: string,
+  changedBy: string | null | undefined,
+): "customer" | "shop" | null {
+  if (status !== "cancelled" || !changedBy) return null;
+  return changedBy === "customer" ? "customer" : "shop";
+}
+
+/**
+ * The single status-change table (the server's checkTransition uses it too).
+ * `started` = the booking's start time has passed.
+ */
+export function allowedStatusChanges(status: BookingStatus, started: boolean): BookingStatus[] {
+  switch (status) {
+    case "pending":
+    case "confirmed":
+      return started ? ["completed", "no_show", "cancelled"] : ["cancelled"];
+    case "completed":
+      return started ? ["no_show"] : [];
+    case "no_show":
+      return started ? ["completed"] : [];
+    case "cancelled":
+      return started ? [] : ["confirmed"];
+    default:
+      return [];
+  }
+}
 
 export const statusLabel = (b: Pick<AdminBooking, "status" | "statusRaw">): string =>
   b.status === "unknown" ? b.statusRaw || "Unknown" : STATUS_LABEL[b.status];

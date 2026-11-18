@@ -2,6 +2,8 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDays,
+  FREE_ADDONS_PLAN,
+  planIncludesFreeAddons,
   isInWindow,
   isOpenDay,
   isValidDateString,
@@ -56,8 +58,17 @@ describe("booking-shared", () => {
     assert.equal(isOpenDay(C, "2026-11-23"), false);
   });
 
-  test("quote: premium add-ons are free, others are charged, duplicates/unknown dropped", () => {
-    assert.deepEqual(quote(C, "premium", ["hot-towel", "filler"]), { durationMin: 30, totalGBP: 0 });
+  test("planIncludesFreeAddons: only premium", () => {
+    assert.equal(FREE_ADDONS_PLAN, "premium");
+    assert.equal(planIncludesFreeAddons("premium"), true);
+    for (const p of ["core", "plus", "", null, undefined]) assert.equal(planIncludesFreeAddons(p), false);
+  });
+
+  test("quote: freeAddons zeroes add-on prices, keeps duration; others are charged, duplicates/unknown dropped", () => {
+    assert.deepEqual(quote(C, "premium", ["hot-towel", "filler"], { freeAddons: true }), { durationMin: 30, totalGBP: 0 });
+    const paid = quote(C, "premium", ["hot-towel", "filler"]);
+    assert.ok(paid && paid.totalGBP > 0, "no freeAddons: add-ons are priced");
+    assert.deepEqual(quote(C, "premium", ["hot-towel"], { freeAddons: false }), quote(C, "premium", ["hot-towel"]));
     assert.deepEqual(quote(C, "haircut", ["hot-towel", "hot-towel", "bogus"]), { durationMin: 30, totalGBP: 25 });
     assert.equal(quote(C, "bogus", []), null);
   });
@@ -67,7 +78,7 @@ describe("booking-shared", () => {
       ...C,
       addons: C.addons.map((a) => (a.id === "hot-towel" ? { ...a, extraMin: 10 } : a.id === "filler" ? { ...a, extraMin: 5 } : a)),
     };
-    assert.deepEqual(quote(custom, "premium", ["hot-towel", "filler"]), { durationMin: 45, totalGBP: 0 });
+    assert.deepEqual(quote(custom, "premium", ["hot-towel", "filler"], { freeAddons: true }), { durationMin: 45, totalGBP: 0 });
     assert.deepEqual(quote(custom, "haircut", ["hot-towel", "hot-towel"]), { durationMin: 40, totalGBP: 25 });
   });
 

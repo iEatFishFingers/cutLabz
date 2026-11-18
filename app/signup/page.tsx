@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import AuthCard from "@/components/account/AuthCard";
+import AuthSkeleton from "@/components/account/AuthSkeleton";
 import SignupForm from "@/components/account/auth/SignupForm";
 import { getViewer, safeNext } from "@/lib/customer/viewer";
 
@@ -15,7 +16,7 @@ type SP = Promise<{ [k: string]: string | string[] | undefined }>;
 export default function SignupPage({ searchParams }: { searchParams: SP }) {
   return (
     <AuthCard eyebrow="Account" title="Create account">
-      <Suspense fallback={<SignupForm next="/account" />}>
+      <Suspense fallback={<AuthSkeleton rows={4} />}>
         <Gate searchParams={searchParams} />
       </Suspense>
     </AuthCard>

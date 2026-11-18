@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { formatTime } from "@/lib/availability";
 import { formatDate } from "@/lib/booking-shared";
-import { initials, isActiveStatus, type AdminBooking } from "@/lib/admin/bookings-shared";
+import { initials, type AdminBooking } from "@/lib/admin/bookings-shared";
+import { StatusIcon } from "../icons";
 
 export default function WeekView({
   dates,
@@ -18,7 +19,7 @@ export default function WeekView({
   return (
     <ul className="grid gap-3 md:grid-cols-7">
       {dates.map((d) => {
-        const day = bookings.filter((b) => b.date === d && isActiveStatus(b.status));
+        const day = bookings.filter((b) => b.date === d && b.status !== "cancelled");
         return (
           <li
             key={d}
@@ -38,6 +39,7 @@ export default function WeekView({
               {day.map((b) => (
                 <li key={b.id} className="flex gap-2">
                   <span className="shrink-0 text-white/50">{formatTime(b.startMin)}</span>
+                  {b.status !== "confirmed" && <StatusIcon status={b.status} className="mt-0.5 size-3.5 shrink-0" />}
                   <span className="min-w-0 flex-1 truncate"><bdi>{b.name}</bdi></span>
                   <span className="shrink-0 text-white/50">{initialsOf(b.barberId)}</span>
                 </li>
