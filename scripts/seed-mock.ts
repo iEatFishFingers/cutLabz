@@ -236,6 +236,9 @@ async function main() {
       user_id: u.id,
       membership_id: member ? u.m?.id : null,
       cancelled_at: status === "cancelled" ? createdAt : null,
+      // Audit fields, as the app would stamp them: customers cancel themselves; staff close out past bookings.
+      status_changed_at: status === "confirmed" ? null : createdAt,
+      status_changed_by: status === "cancelled" ? "customer" : status === "confirmed" ? null : "Reception (example data)",
       created_at: createdAt,
     });
     userSlots.add(`${u.id}|${date}|${start}`);
