@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import type { BookingDraft } from "@/lib/booking-shared";
 import {
@@ -39,6 +40,12 @@ export default function BarberStep({ draft, update, hideHeader }: Props) {
     ...barbers.map((b) => ({ id: b.id, name: b.name, sub: b.role, mark: monogram(b.name) })),
   ];
   const hasSelection = options.some((o) => o.id === draft.barberId);
+
+  // Preselect "Any available" when entering with nothing chosen (still changeable).
+  const { barberId } = draft;
+  useEffect(() => {
+    if (barberId == null) update({ barberId: "any" });
+  }, [barberId, update]);
 
   return (
     <section>

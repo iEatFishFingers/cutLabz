@@ -37,7 +37,12 @@ export default function DetailsStep({
   // Focus the first invalid field when the flow asks (client or server errors).
   useEffect(() => {
     if (!consumeFocus()) return;
-    document.querySelector<HTMLElement>("[data-details-form] [aria-invalid=\"true\"]")?.focus();
+    const el = document.querySelector<HTMLElement>(
+      "[data-details-form] [aria-invalid=\"true\"]",
+    );
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    el.focus({ preventScroll: true });
   }, [focusSignal, consumeFocus]);
 
   const errorFor = (f: DetailsField) =>
@@ -107,10 +112,12 @@ export default function DetailsStep({
 
         <div>
           <label htmlFor="details-phone" className={LABEL}>
-            PHONE
+            PHONE <span className="text-white/60">(REQUIRED)</span>
           </label>
           <input
             {...fieldProps("phone")}
+            required
+            aria-required="true"
             type="tel"
             inputMode="tel"
             autoComplete="tel"

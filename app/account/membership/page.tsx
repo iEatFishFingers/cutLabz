@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import CancelMembership from "@/components/account/membership/CancelMembership";
 import PlanCards from "@/components/account/membership/PlanCards";
 import { BTN_PRIMARY, LABEL } from "@/components/account/bookings/ui";
 import { formatDate, shopNow } from "@/lib/booking-shared";
@@ -79,9 +80,15 @@ export default async function MembershipPage({
         >
           <p className={LABEL}>Current plan</p>
           <p className="mt-3 text-3xl font-[500] tracking-[-0.02em]">{planName(current.plan)}</p>
-          <p className="mt-3 text-sm text-white/80">
-            Active until {formatDate(current.endsOn, { long: true })}
-          </p>
+          {current.cancelledAt ? (
+            <p className="mt-3 text-sm text-amber-300">
+              Cancelled. Active until {formatDate(current.endsOn, { long: true })}
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-white/80">
+              Active until {formatDate(current.endsOn, { long: true })}
+            </p>
+          )}
           <p className="mt-1 text-sm text-white/50">{daysLeftLabel(current.endsOn, today)}</p>
           <p className="mt-6 text-sm text-white/60">
             Unlimited cuts: one upcoming member cut at a time. You can&apos;t book past{" "}
@@ -90,6 +97,9 @@ export default async function MembershipPage({
           <Link href="/book" className={`mt-6 ${BTN_PRIMARY}`}>
             Book a cut
           </Link>
+          {!current.cancelledAt && (
+            <CancelMembership endsOnLabel={formatDate(current.endsOn, { long: true })} />
+          )}
         </section>
 
         <PastPlans plans={past} />

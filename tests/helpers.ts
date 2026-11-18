@@ -18,7 +18,7 @@ export function viewer(p: Partial<BookingViewer> = {}): BookingViewer {
 }
 
 export function member(plan = "core", p: Partial<Membership> = {}): Membership {
-  return { id: "mem-1", plan, startsOn: "2026-11-10", endsOn: "2026-12-09", ...p };
+  return { id: "mem-1", plan, startsOn: "2026-11-10", endsOn: "2026-12-09", cancelledAt: null, ...p };
 }
 
 let n = 0;

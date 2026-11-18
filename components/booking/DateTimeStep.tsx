@@ -82,6 +82,16 @@ export default function DateTimeStep({
   useEffect(() => {
     if (!requestKey || !date || !serviceId || !barberId) return;
     let active = true;
+    // Server actions take no AbortSignal, so the controller only marks the request
+    // as abandoned: after 10 s (or on cleanup) its late response is ignored.
+    const ctrl = new AbortController();
+    const fail = (error: string) => {
+      if (!ctrl.signal.aborted) setFetched({ key: requestKey, result: { ok: false, error } });
+    };
+    const timer = setTimeout(() => {
+      fail("Loading times is taking too long. Check your connection and try again.");
+      ctrl.abort();
+    }, 10_000);
     fetchSlots({
       date,
       serviceId,
@@ -89,17 +99,16 @@ export default function DateTimeStep({
       addonIds: addonKey ? addonKey.split(",") : [],
     })
       .then((result) => {
-        if (active) setFetched({ key: requestKey, result });
+        if (active && !ctrl.signal.aborted) setFetched({ key: requestKey, result });
       })
       .catch(() => {
-        if (active)
-          setFetched({
-            key: requestKey,
-            result: { ok: false, error: "Couldn't load times. Check your connection." },
-          });
-      });
+        if (active) fail("Couldn't load times. Check your connection.");
+      })
+      .finally(() => clearTimeout(timer));
     return () => {
       active = false;
+      clearTimeout(timer);
+      ctrl.abort();
     };
   }, [requestKey, date, serviceId, barberId, addonKey, fetchSlots]);
 
@@ -114,16 +123,21 @@ export default function DateTimeStep({
   }, [current, startMin, update]);
 
   const header = hideHeader ? null : (
-    <StepHeader index={3} title="Pick a time." body="Closed days are greyed out." />
+    <StepHeader index={3} title="Pick a time." body="Closed days are greyed out and crossed through." />
   );
 
   if (!today) {
     return (
       <section>
         {header}
-        <p aria-live="polite" className="text-sm text-white/40">
+        <p aria-live="polite" className="text-sm text-white/50">
           Loading dates…
         </p>
+        <div aria-hidden="true" className="mt-4 max-w-md grid grid-cols-7 gap-1 sm:gap-2">
+          {Array.from({ length: 28 }, (_, i) => (
+            <div key={i} className="aspect-square border border-white/10 bg-white/5 animate-pulse" />
+          ))}
+        </div>
       </section>
     );
   }
@@ -256,7 +270,7 @@ export default function DateTimeStep({
                     ? "bg-white text-black border-white"
                     : open
                       ? "border-white/10 hover:border-white/30"
-                      : "border-transparent text-white/20 line-through cursor-not-allowed"
+                      : "border-transparent text-white/30 line-through decoration-white/50 cursor-not-allowed"
                 }`}
               >
                 {showMonth && (
@@ -300,7 +314,14 @@ export default function DateTimeStep({
         {!date ? (
           <p className="text-sm text-white/40">Choose a date to see times.</p>
         ) : loading ? (
-          <p className="text-sm text-white/40">Loading times…</p>
+          <div aria-hidden="true">
+            <p className="mb-3 text-sm text-white/50">Loading times…</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              {Array.from({ length: 10 }, (_, i) => (
+                <div key={i} className="h-11 border border-white/10 bg-white/5 animate-pulse" />
+              ))}
+            </div>
+          </div>
         ) : current && !current.ok ? (
           <div className="flex flex-wrap items-center gap-4">
             <p className="text-sm text-red-400">{current.error}</p>
@@ -309,7 +330,7 @@ export default function DateTimeStep({
               onClick={() => setAttempt((n) => n + 1)}
               className={`px-6 py-3 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
             >
-              RETRY
+              TRY AGAIN
             </button>
           </div>
         ) : slots.length === 0 ? (

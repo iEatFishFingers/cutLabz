@@ -41,7 +41,7 @@ export default async function AccountShell({ children }: { children: ReactNode }
           {v.name && <span className="truncate text-xs text-white/40">{v.email}</span>}
           {m && (
             <span className="text-[11px] uppercase tracking-[0.2em] text-white/70 border border-white/20 px-2 py-1">
-              {m.plan} member · until {shortDate(m.endsOn)}
+              {m.plan} member · {m.cancelledAt ? "cancelled, active until" : "until"} {shortDate(m.endsOn)}
             </span>
           )}
         </div>

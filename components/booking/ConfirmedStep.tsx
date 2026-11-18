@@ -87,12 +87,14 @@ export default function ConfirmedStep({ booking, onBookAnother }: Props) {
         </button>
         <Link
           href="/account"
+          prefetch={false}
           className={`px-6 py-3 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
         >
           MANAGE APPOINTMENTS
         </Link>
         <Link
           href="/"
+          prefetch={false}
           className={`px-6 py-3 text-xs tracking-[0.2em] bg-white text-black border border-white hover:bg-transparent hover:text-white transition ${FOCUS_RING}`}
         >
           BACK HOME

@@ -16,6 +16,10 @@ export type AuthState = {
 const str = (v: FormDataEntryValue | null, max: number): string | null =>
   typeof v === "string" && v.length <= max ? v : null;
 
+const tooLong = (max: number) => `Too long (max ${max} characters).`;
+const isTooLong = (v: FormDataEntryValue | null, max: number) =>
+  typeof v === "string" && v.length > max;
+
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const name = str(formData.get("name"), 200)?.trim() ?? "";
   const phone = str(formData.get("phone"), 100)?.trim() ?? "";
@@ -25,11 +29,15 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
 
   const fe: NonNullable<AuthState["fieldErrors"]> = {};
   const d = validateDetails({ name, phone, email, notes: "" });
-  if (d.name) fe.name = d.name;
-  if (d.phone) fe.phone = d.phone;
-  if (d.email) fe.email = d.email;
-  if (password.length < 8) fe.password = "Use at least 8 characters.";
-  else if (password.length > 72) fe.password = "Max 72 characters.";
+  if (isTooLong(formData.get("name"), 200)) fe.name = tooLong(LIMITS.name);
+  else if (d.name) fe.name = d.name;
+  if (isTooLong(formData.get("phone"), 100)) fe.phone = tooLong(LIMITS.phone);
+  else if (d.phone) fe.phone = d.phone;
+  if (isTooLong(formData.get("email"), 400)) fe.email = tooLong(LIMITS.email);
+  else if (d.email) fe.email = d.email;
+  if (isTooLong(formData.get("password"), 200)) fe.password = tooLong(72);
+  else if (password.length < 8) fe.password = "Use at least 8 characters.";
+  else if (password.length > 72) fe.password = tooLong(72);
   if (Object.keys(fe).length) return { fieldErrors: fe };
 
   const db = await createSupabaseServerClient();

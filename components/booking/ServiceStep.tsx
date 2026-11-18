@@ -140,6 +140,7 @@ export default function ServiceStep({ draft, update }: Props) {
           <p className="text-xs text-white/40">Members only. Your plan is a different cut.</p>
         ) : (
           <Link
+            prefetch={false}
             href={`/account/membership?plan=${encodeURIComponent(s.id)}`}
             className={`self-start min-h-11 inline-flex items-center text-xs tracking-[0.2em] underline underline-offset-4 text-white/60 hover:text-white transition ${FOCUS_RING}`}
           >
@@ -150,23 +151,30 @@ export default function ServiceStep({ draft, update }: Props) {
     );
   };
 
+  const membershipSection = {
+    label: "MEMBERSHIP",
+    items: membership.map((s, i) => renderCard(s, i)),
+  };
+  const oneOffSection = {
+    label: "ONE-OFF",
+    items: oneOff.map((s, i) => renderCard(s, membership.length + i)),
+  };
+
   return (
     <section>
       <StepHeader index={1} title="Choose your cut." body={isMember ? "Your membership cut is included. Or pay for a one-off." : "Pick a one-off, or join to unlock membership cuts."} />
 
       <div role="radiogroup" aria-label="Service" className="space-y-8">
-        <div>
-          <p className="mb-3 text-xs tracking-[0.2em] text-white/40">MEMBERSHIP</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {membership.map((s, i) => renderCard(s, i))}
-          </div>
-        </div>
-        <div>
-          <p className="mb-3 text-xs tracking-[0.2em] text-white/40">ONE-OFF</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {oneOff.map((s, i) => renderCard(s, membership.length + i))}
-          </div>
-        </div>
+        {/* Non-members see the bookable one-off cuts first; locked plans sit below.
+            DOM order matches visual order so arrow-key navigation follows the page. */}
+        {(isMember ? [membershipSection, oneOffSection] : [oneOffSection, membershipSection]).map(
+          (sec) => (
+            <div key={sec.label}>
+              <p className="mb-3 text-xs tracking-[0.2em] text-white/40">{sec.label}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{sec.items}</div>
+            </div>
+          ),
+        )}
       </div>
 
       {selected && (

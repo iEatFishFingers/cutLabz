@@ -115,7 +115,7 @@ export default function Summary({ draft, variant }: Props) {
   return (
     <aside
       aria-label="Your booking"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-black/80 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-black/80 backdrop-blur-md border-t border-white/10 px-4 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))]"
     >
       {open && service && (
         <div id={panelId} className="max-h-[60vh] overflow-y-auto pt-2 pb-4 mb-3 border-b border-white/10">
@@ -128,14 +128,10 @@ export default function Summary({ draft, variant }: Props) {
             <p className="truncate">
               <span className="text-white">{service.name}</span>
               {when && <span className="text-white/50"> • {when}</span>}
+              {q && <span className="text-white/50"> • {formatGBP(q.totalGBP)}</span>}
             </p>
           ) : (
-            <p className="text-white/40">Choose a service</p>
-          )}
-          {q && (
-            <p className="text-xs text-white/40 mt-0.5">
-              <span className="text-white">{formatGBP(q.totalGBP)}</span> • {q.durationMin} min
-            </p>
+            <p className="text-white/50">Choose a service</p>
           )}
         </div>
         {service && (

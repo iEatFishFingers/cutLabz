@@ -24,7 +24,16 @@ export type Booking = {
   status?: string;
   /** Customer-facing reference, e.g. "CL-3F9A2C". Present on rows read back. */
   reference?: string;
+  /** Idempotency key supplied by the booking UI (unique per user). */
+  requestKey?: string | null;
 };
+
+/** Raised by the DB trigger enforce_booking_cap (and mirrored by the memory store). */
+export const BOOKING_LIMIT_MESSAGE = "You can hold up to 3 upcoming bookings. Cancel or complete one first.";
+
+export function isBookingLimitError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return !!error && (error.message ?? "").includes("booking_limit_reached");
+}
 
 export const ACTIVE_STATUSES = ["pending", "confirmed"] as const;
 export const isActiveStatus = (s: string | undefined): boolean =>
@@ -50,10 +59,11 @@ type Row = {
   user_id?: string | null;
   membership_id?: string | null;
   status?: string;
+  request_key?: string | null;
 };
 
 const FULL_COLUMNS =
-  "id, reference, booking_date, start_min, end_min, barber_id, service_id, addon_ids, name, email, phone, notes, total_pence, created_at, user_id, membership_id, status";
+  "id, reference, booking_date, start_min, end_min, barber_id, service_id, addon_ids, name, email, phone, notes, total_pence, created_at, user_id, membership_id, status, request_key";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fromRow(r: Row): Booking {
@@ -75,6 +85,7 @@ function fromRow(r: Row): Booking {
     membershipId: r.membership_id ?? null,
     status: r.status ?? "confirmed",
     reference: r.reference,
+    requestKey: r.request_key ?? null,
   };
 }
 
@@ -111,7 +122,7 @@ export async function listBookingsForDate(date: string): Promise<Booking[]> {
 
 export async function insertBooking(
   b: Omit<Booking, "id" | "createdAt" | "reference">,
-): Promise<Booking | "conflict"> {
+): Promise<Booking | "conflict" | "limit" | "duplicate"> {
   if ((await backend()) === "memory") {
     return (await import("./store-memory")).insertBooking(b);
   }
@@ -140,14 +151,17 @@ export async function insertBooking(
         status: b.status ?? "confirmed",
         user_id: b.userId ?? null,
         membership_id: b.membershipId ?? null,
+        request_key: b.requestKey ?? null,
       })
       .select(FULL_COLUMNS)
       .single();
     if (!error) return fromRow(data as Row);
 
     const msg = error.message ?? "";
+    if (isBookingLimitError(error)) return "limit";
     if (error.code === "23P01") return "conflict";
     if (error.code === "23505") {
+      if (msg.includes("request_key")) return "duplicate";
       // Only the reference column is expected to collide; retry with a new id.
       if (msg.includes("bookings_pkey")) continue;
       if (!msg.includes("reference")) {
@@ -186,6 +200,28 @@ export async function listActiveBookingsForUser(
     throw new Error("Could not load bookings.");
   }
   return (data as Row[]).map(fromRow);
+}
+
+/** The user's booking created with this idempotency key, if any (any status). */
+export async function findBookingByRequestKey(
+  userId: string,
+  requestKey: string,
+): Promise<Booking | null> {
+  if ((await backend()) === "memory") {
+    return (await import("./store-memory")).findBookingByRequestKey(userId, requestKey);
+  }
+  const { getSupabaseAdmin } = await import("./supabase/admin");
+  const { data, error } = await getSupabaseAdmin()
+    .from("bookings")
+    .select(FULL_COLUMNS)
+    .eq("user_id", userId)
+    .eq("request_key", requestKey)
+    .maybeSingle();
+  if (error) {
+    console.error("booking request-key read failed", error.code, error.message);
+    throw new Error("Could not load booking.");
+  }
+  return data ? fromRow(data as Row) : null;
 }
 
 /** All of a user's bookings (any status), newest first. */
@@ -253,7 +289,7 @@ export async function rescheduleBookingRow(
   userId: string,
   id: string,
   to: RescheduleTarget,
-): Promise<Booking | "conflict" | "not_found"> {
+): Promise<Booking | "conflict" | "not_found" | "limit"> {
   if ((await backend()) === "memory") {
     return (await import("./store-memory")).rescheduleBookingRow(userId, id, to);
   }
@@ -273,9 +309,89 @@ export async function rescheduleBookingRow(
     .select(FULL_COLUMNS);
   if (error) {
     // The no_overlap exclusion constraint makes the clash check atomic.
+    if (isBookingLimitError(error)) return "limit";
     if (error.code === "23P01") return "conflict";
     console.error("booking reschedule failed", error.code, error.message);
     throw new Error("Could not reschedule booking.");
   }
   return data?.[0] ? fromRow(data[0] as Row) : "not_found";
+}
+
+// ---------- Account deletion ----------
+
+/** Placeholder phone written over anonymised bookings (the column is NOT NULL). */
+export const DELETED_PHONE = "deleted";
+
+/** Cancels the user's not-yet-started pending/confirmed bookings. Returns how many changed. */
+export async function cancelUpcomingBookingsForUser(
+  userId: string,
+  now: { date: string; min: number },
+): Promise<number> {
+  if ((await backend()) === "memory") {
+    return (await import("./store-memory")).cancelUpcomingBookingsForUser(userId, now);
+  }
+  const { getSupabaseAdmin } = await import("./supabase/admin");
+  const db = getSupabaseAdmin();
+  const stamp = { status: "cancelled", cancelled_at: new Date().toISOString() };
+  const later = await db
+    .from("bookings")
+    .update(stamp)
+    .eq("user_id", userId)
+    .in("status", [...ACTIVE_STATUSES])
+    .gt("booking_date", now.date)
+    .select("id");
+  if (later.error) {
+    console.error("account cancel failed", later.error.code, later.error.message);
+    throw new Error("Could not cancel bookings.");
+  }
+  const today = await db
+    .from("bookings")
+    .update(stamp)
+    .eq("user_id", userId)
+    .in("status", [...ACTIVE_STATUSES])
+    .eq("booking_date", now.date)
+    .gt("start_min", now.min)
+    .select("id");
+  if (today.error) {
+    console.error("account cancel failed", today.error.code, today.error.message);
+    throw new Error("Could not cancel bookings.");
+  }
+  return (later.data?.length ?? 0) + (today.data?.length ?? 0);
+}
+
+/** Overwrites name/email/phone/notes on ALL of the user's bookings (kept for the shop's records). */
+export async function anonymiseBookingsForUser(userId: string): Promise<void> {
+  if ((await backend()) === "memory") {
+    return (await import("./store-memory")).anonymiseBookingsForUser(userId, DELETED_PHONE);
+  }
+  const { getSupabaseAdmin } = await import("./supabase/admin");
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from("bookings").select("id").eq("user_id", userId);
+  if (error) {
+    console.error("account anonymise read failed", error.code, error.message);
+    throw new Error("Could not anonymise bookings.");
+  }
+  const ids = (data ?? []).map((r) => r.id as string);
+  for (let i = 0; i < ids.length; i += 10) {
+    const results = await Promise.all(
+      ids.slice(i, i + 10).map((id) =>
+        db
+          .from("bookings")
+          .update({
+            name: "Deleted customer",
+            email: `deleted+${id}@example.invalid`,
+            phone: DELETED_PHONE,
+            notes: "",
+            request_key: null,
+          })
+          .eq("id", id)
+          .eq("user_id", userId),
+      ),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      console.error("account anonymise failed", failed.error.code, failed.error.message);
+      throw new Error("Could not anonymise bookings.");
+    }
+  }
 }

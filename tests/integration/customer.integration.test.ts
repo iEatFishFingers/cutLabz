@@ -151,7 +151,7 @@ describe("customer lifecycle (live DB)", { skip: SKIP }, () => {
     assert.equal(ins.error, null);
     const viewer: BookingViewer = {
       ...u,
-      membership: { id: ins.data!.id, plan: "core", startsOn: ins.data!.starts_on, endsOn: ins.data!.ends_on },
+      membership: { id: ins.data!.id, plan: "core", startsOn: ins.data!.starts_on, endsOn: ins.data!.ends_on, cancelledAt: null },
     };
     const late = open.find((d) => d > endsOn)!;
     const r = await book(viewer, { serviceId: "core", date: late });

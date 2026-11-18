@@ -24,6 +24,7 @@ export type RescheduleResult =
         | "unavailable"
         | "slot_taken"
         | "membership"
+        | "limit"
         | "invalid"
         | "error";
       error: string;

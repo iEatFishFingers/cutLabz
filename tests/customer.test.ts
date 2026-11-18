@@ -38,8 +38,9 @@ const input = (p: Partial<CreateBookingInput> = {}): CreateBookingInput => ({
 const u1 = viewer({ userId: "u1", email: "u1@example.com" });
 const u2 = viewer({ userId: "u2", email: "u2@example.com" });
 
-const seed = (p: { date: string; startMin: number; userId: string; serviceId?: string; membershipId?: string }) =>
-  insertBooking({
+const seed = async (p: { date: string; startMin: number; userId: string; serviceId?: string; membershipId?: string }) =>
+{
+  const r = await insertBooking({
     date: p.date,
     startMin: p.startMin,
     endMin: p.startMin + 30,
@@ -54,6 +55,8 @@ const seed = (p: { date: string; startMin: number; userId: string; serviceId?: s
     userId: p.userId,
     membershipId: p.membershipId ?? null,
   });
+  return r === "limit" || r === "duplicate" ? "conflict" : r;
+};
 
 async function book(v = u1, p: Partial<CreateBookingInput> = {}) {
   const r = await createBooking(input(p), NOW, v);

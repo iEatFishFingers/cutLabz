@@ -222,6 +222,8 @@ export async function createAdminBooking(
     totalGBP: q.totalGBP,
   });
   if (saved === "conflict") return fail("That barber already has a booking at that time.");
+  // Admin bookings carry no user id, so the cap/idempotency results cannot occur.
+  if (typeof saved === "string") return fail("Could not save booking.");
   // insertBooking derives the reference from the id the same way.
   const reference = `CL-${saved.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
   return { ok: true, reference, date, startMin, barberName: barber.name };

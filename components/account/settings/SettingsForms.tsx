@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { changePassword, updateProfile, type SettingsState } from "./actions";
+import { changePassword, deleteAccountAction, updateProfile, type SettingsState } from "./actions";
 import { Field, FormError } from "@/components/account/auth/Fields";
 import { primaryBtn } from "@/components/account/auth/styles";
 import { LIMITS } from "@/lib/booking-shared";
@@ -63,6 +63,49 @@ export function PasswordForm({ highlight }: { highlight: boolean }) {
         <Status ok={state.ok} text="Password updated." />
         <button type="submit" disabled={pending} className={`${primaryBtn} sm:w-auto sm:px-8`}>
           {pending ? "Updating" : "Update password"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+export function DeleteAccountForm() {
+  const [state, action, pending] = useActionState<SettingsState, FormData>(deleteAccountAction, {});
+  return (
+    <section
+      className="bg-[#0a0a0a] border border-red-500/40 p-5 sm:p-6"
+      aria-labelledby="delete-h"
+    >
+      <h2 id="delete-h" className="text-[11px] uppercase tracking-[0.2em] text-red-400 mb-5">
+        Delete account
+      </h2>
+      <div className="max-w-sm space-y-3 text-sm text-white/70 mb-5">
+        <p>Deleting your account is permanent and cannot be undone.</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Your login and membership are removed.</li>
+          <li>Your upcoming appointments are cancelled.</li>
+          <li>
+            Past appointment records are kept without your name, email or phone number.
+          </li>
+        </ul>
+      </div>
+      <form action={action} className="space-y-5 max-w-sm" noValidate>
+        <Field
+          id="confirm-email"
+          name="confirmEmail"
+          text="Type your email to confirm"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          maxLength={254}
+        />
+        <FormError message={state.error} />
+        <button
+          type="submit"
+          disabled={pending}
+          className="w-full sm:w-auto sm:px-8 min-h-12 bg-red-600 text-white text-[11px] uppercase tracking-[0.2em] font-medium disabled:opacity-50 hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          {pending ? "Deleting" : "Delete my account"}
         </button>
       </form>
     </section>

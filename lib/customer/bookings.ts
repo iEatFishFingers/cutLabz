@@ -19,6 +19,7 @@ import type { ServerCatalog } from "../catalog";
 import { loadCatalog } from "../catalog-db";
 import { canSelfServe, hasStarted } from "../membership";
 import {
+  BOOKING_LIMIT_MESSAGE,
   cancelBooking,
   getBookingForUser,
   isActiveStatus,
@@ -198,6 +199,7 @@ export type RescheduleResult =
         | "slot_taken"
         | "membership"
         | "invalid"
+        | "limit"
         | "error";
       error: string;
     };
@@ -257,6 +259,8 @@ export async function rescheduleMyBooking(
       barberId: candidate,
     });
     if (res === "conflict") continue;
+    if (res === "limit")
+      return { ok: false, code: "limit", error: BOOKING_LIMIT_MESSAGE };
     if (res === "not_found")
       return { ok: false, code: "not_active", error: "This booking is already closed." };
     return { ok: true, booking: toMyBooking(res, catalog, now) };

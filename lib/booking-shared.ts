@@ -59,7 +59,11 @@ export type CreateBookingInput = {
   email: string;
   phone: string;
   notes: string;
+  /** Optional idempotency key (8-64 chars of A-Za-z0-9-). A retry with the same key returns the same booking. */
+  requestKey?: string;
 };
+
+export const REQUEST_KEY_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 export type ConfirmedBooking = {
   reference: string; // e.g. "CL-3F9A2C"
@@ -187,7 +191,8 @@ export function validateContact(d: Pick<BookingDraft, "name" | "phone" | "notes"
   const phoneDigits = d.phone.replace(/[\s()+-]/g, "");
   if (name.length < 2) e.name = "Enter your name.";
   else if (name.length > LIMITS.name) e.name = `Max ${LIMITS.name} characters.`;
-  if (!/^\d{7,15}$/.test(phoneDigits) || d.phone.trim().length > LIMITS.phone)
+  if (phoneDigits.length === 0) e.phone = "Phone number is required.";
+  else if (!/^\d{7,15}$/.test(phoneDigits) || d.phone.trim().length > LIMITS.phone)
     e.phone = "Enter a valid phone number.";
   if (d.notes.length > LIMITS.notes) e.notes = `Max ${LIMITS.notes} characters.`;
   return e;

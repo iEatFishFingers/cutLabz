@@ -213,3 +213,48 @@ insert into public.availability (barber_id, weekday, open_min, close_min)
 select b.id, d, 660, 1260
 from public.barbers b, generate_series(2,6) as d
 where not exists (select 1 from public.availability a where a.barber_id = b.id and a.weekday = d);
+
+-- ---------- QA fixes: membership cancel, idempotent booking, booking cap ----------
+-- Applied to the live project. Cancelling a membership sets cancelled_at; access
+-- continues until ends_on.
+alter table public.memberships add column if not exists cancelled_at timestamptz;
+
+-- Idempotent submit: a retry with the same (user, key) never creates a 2nd booking.
+alter table public.bookings add column if not exists request_key text;
+create unique index if not exists bookings_user_request_key_idx
+  on public.bookings (user_id, request_key) where request_key is not null;
+
+-- Hard cap: a user may hold at most 3 upcoming pending/confirmed bookings. The
+-- advisory lock serialises concurrent inserts for one user (closes the race).
+create or replace function public.enforce_booking_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  n int;
+begin
+  if new.user_id is null or new.status not in ('pending','confirmed') then
+    return new;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(new.user_id::text, 0));
+  select count(*) into n
+  from public.bookings b
+  where b.user_id = new.user_id
+    and b.id <> new.id
+    and b.status in ('pending','confirmed')
+    and (b.booking_date::timestamp + make_interval(mins => b.start_min))
+        > (now() at time zone 'Europe/London');
+  if n >= 3 then
+    raise exception 'booking_limit_reached' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.enforce_booking_cap() from public, anon, authenticated;
+
+drop trigger if exists bookings_enforce_cap on public.bookings;
+create trigger bookings_enforce_cap
+  before insert or update of status, booking_date, start_min, user_id on public.bookings
+  for each row execute function public.enforce_booking_cap();

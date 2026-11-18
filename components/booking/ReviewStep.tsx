@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { formatTime } from "@/lib/availability";
 import {
@@ -59,6 +59,16 @@ export default function ReviewStep({ draft, onEdit, error, onReload, link }: Pro
   const chosen = pickAddons(catalog, draft.addonIds);
   const q = quote(catalog, draft.serviceId, draft.addonIds);
   const barberName = getBarberName(catalog, draft.barberId);
+  const alertRef = useRef<HTMLDivElement>(null);
+
+  // Bring a failure into view and focus it (the confirm button is far below it).
+  useEffect(() => {
+    if (!error) return;
+    const el = alertRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "auto" });
+    el.focus({ preventScroll: true });
+  }, [error]);
 
   return (
     <section>
@@ -66,9 +76,22 @@ export default function ReviewStep({ draft, onEdit, error, onReload, link }: Pro
 
       {error && (
         <div className="mb-6 flex flex-wrap items-center gap-4">
-          <p role="alert" className="text-sm text-red-400">
-            {error}
-          </p>
+          <div ref={alertRef} role="alert" tabIndex={-1} className="outline-none min-w-0">
+            <p className="text-sm text-red-400">{error}</p>
+            {!onReload && (
+              <p className="mt-2 text-sm text-white/60">
+                Not sure it went through? Check{" "}
+                <Link
+                  href="/account"
+                  prefetch={false}
+                  className="underline underline-offset-4 hover:text-white transition"
+                >
+                  Appointments
+                </Link>{" "}
+                before trying again.
+              </p>
+            )}
+          </div>
           {onReload && (
             <button
               type="button"
@@ -81,6 +104,7 @@ export default function ReviewStep({ draft, onEdit, error, onReload, link }: Pro
           {link && (
             <Link
               href={link.href}
+              prefetch={false}
               className={`inline-flex items-center min-h-11 px-6 text-xs tracking-[0.2em] border border-white/20 hover:bg-white hover:text-black transition ${FOCUS_RING}`}
             >
               {link.label}
@@ -159,7 +183,7 @@ export default function ReviewStep({ draft, onEdit, error, onReload, link }: Pro
 
       <p className="mt-6 text-xs text-white/40">
         By confirming you agree to our{" "}
-        <Link href="/terms" className="underline underline-offset-4 hover:text-white transition">
+        <Link href="/terms" prefetch={false} className="underline underline-offset-4 hover:text-white transition">
           Terms &amp; Conditions
         </Link>
         .

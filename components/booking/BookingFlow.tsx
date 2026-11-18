@@ -123,6 +123,40 @@ function readStored(catalog: ClientCatalog): Stored | null {
   }
 }
 
+// Idempotency key for the confirm attempt session. Kept in sessionStorage so a
+// retry after a failure (or a reload mid-submit) reuses it; cleared on success
+// and whenever the booking details or slot change.
+const KEY_STORAGE = "cutlabz:booking:requestKey";
+
+let memoryKey: string | null = null; // fallback when sessionStorage is unavailable
+
+function getRequestKey(): string {
+  let key: string | null = null;
+  try {
+    const existing = window.sessionStorage.getItem(KEY_STORAGE);
+    if (existing && /^[A-Za-z0-9-]{8,64}$/.test(existing)) key = existing;
+  } catch {
+    // use the in-memory key
+  }
+  key = key ?? memoryKey ?? crypto.randomUUID();
+  memoryKey = key;
+  try {
+    window.sessionStorage.setItem(KEY_STORAGE, key);
+  } catch {
+    // ignore
+  }
+  return key;
+}
+
+function clearRequestKey() {
+  memoryKey = null;
+  try {
+    window.sessionStorage.removeItem(KEY_STORAGE);
+  } catch {
+    // ignore
+  }
+}
+
 function writeStored(value: Stored | null) {
   try {
     if (value) window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value));
@@ -168,6 +202,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<ConfirmedBooking | null>(null);
 
+  const [slow, setSlow] = useState(false);
   const submittingRef = useRef(false);
   const flowRef = useRef<HTMLDivElement>(null);
   const stepRef = useRef<HTMLDivElement>(null);
@@ -219,6 +254,37 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [catalog, viewer]);
+
+  // Browser Back/Forward moves between steps. Each step change pushes one history
+  // entry (same URL, so no Next.js navigation) tagged with `cutlabzStep`; the
+  // existing history.state is spread so Next's own keys survive. popstate only
+  // sets the step; the effect then sees state.cutlabzStep === step and does not
+  // push again, so there is no loop. The first entry after load is replaced, not
+  // pushed, so a reload / sessionStorage restore keeps working as before.
+  const histInit = useRef(false);
+  const confirmedRef = useRef(false);
+  useEffect(() => {
+    confirmedRef.current = confirmed != null;
+  }, [confirmed]);
+  useEffect(() => {
+    if (!hydrated) return;
+    const cur = (window.history.state ?? {}) as Record<string, unknown>;
+    if (!histInit.current) {
+      histInit.current = true;
+      window.history.replaceState({ ...cur, cutlabzStep: step }, "");
+    } else if (cur.cutlabzStep !== step) {
+      window.history.pushState({ ...cur, cutlabzStep: step }, "");
+    }
+  }, [hydrated, step]);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const s = (e.state as { cutlabzStep?: unknown } | null)?.cutlabzStep;
+      if (confirmedRef.current || typeof s !== "number" || submittingRef.current) return;
+      setStep(Math.min(LAST, Math.max(0, s)));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Persist progress; cleared once a booking is confirmed.
   useEffect(() => {
@@ -277,6 +343,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
     setReviewError(null);
     setReviewLink(null);
     setStaleMenu(false);
+    clearRequestKey(); // details/slot changed: a new attempt session
   }, []);
 
   const reachable = Math.min(maxReached, firstInvalid(draft));
@@ -318,9 +385,11 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
         email: draft.email,
         phone: draft.phone,
         notes: draft.notes,
+        requestKey: getRequestKey(),
       });
       const code: string = res.ok ? "ok" : res.code;
       if (res.ok) {
+        clearRequestKey();
         setConfirmed(res.booking);
       } else if (code === "auth") {
         setReviewError(res.error);
@@ -332,6 +401,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
         setReviewError(res.error);
         setReviewLink({ href: "/account", label: "MANAGE APPOINTMENTS" });
       } else if (res.code === "slot_taken") {
+        clearRequestKey();
         setDraft((d) => ({ ...d, startMin: null }));
         setNotice(res.error);
         setStep(2);
@@ -388,6 +458,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
       barberId: null,
       startMin: null,
     };
+    clearRequestKey();
     writeStored({ draft: cleared, step: 0, maxReached: 0 });
     setDraft(cleared);
     setStep(0);
@@ -405,12 +476,23 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
     setReviewError(null);
     setReviewLink(null);
     setConfirmed(null);
+    clearRequestKey();
     writeStored(null);
   };
 
+  // Show a "taking a while" hint if confirming lasts more than 2 s.
+  useEffect(() => {
+    if (!submitting) return;
+    const t = setTimeout(() => setSlow(true), 2000);
+    return () => {
+      clearTimeout(t);
+      setSlow(false);
+    };
+  }, [submitting]);
+
   const continueDisabled = submitting || (step < 3 && !stepValid(step, draft));
   const continueLabel =
-    step === LAST ? (submitting ? "CONFIRMING…" : "CONFIRM BOOKING") : "CONTINUE";
+    step === LAST ? (submitting ? "BOOKING…" : "CONFIRM BOOKING") : "CONTINUE";
 
   if (confirmed) {
     return (
@@ -435,7 +517,10 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
   }
 
   return (
-    <div ref={flowRef} className="max-w-6xl mx-auto px-4 sm:px-6">
+    <div
+      ref={flowRef}
+      className={`max-w-6xl mx-auto px-4 sm:px-6 ${step === LAST ? "" : "pb-24 lg:pb-0"}`}
+    >
       <div className="grid lg:grid-cols-[1fr_340px] gap-10 items-start">
         <div className="min-w-0">
           <ProgressSteps step={step} maxReached={reachable} onJump={jump} />
@@ -480,7 +565,7 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
             </AnimatePresence>
           </div>
 
-          <div className="mt-12 pt-6 border-t border-white/10 flex items-center justify-between gap-4">
+          <div className="mt-12 pt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
             {step > 0 ? (
               <button type="button" onClick={back} disabled={submitting} className={secondaryBtn}>
                 ← BACK
@@ -499,6 +584,11 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
               {step < LAST && " →"}
             </button>
           </div>
+          {submitting && slow && (
+            <p role="status" className="mt-4 text-sm text-white/60 text-right">
+              This can take a few seconds. Please don&apos;t close or resubmit.
+            </p>
+          )}
         </div>
 
         <div className="hidden lg:block sticky top-24">
@@ -506,7 +596,8 @@ function Flow({ catalog }: { catalog: ClientCatalog }) {
         </div>
       </div>
 
-      <Summary draft={draft} variant="bar" />
+      {/* The review step already shows everything, so the compact bar is hidden there. */}
+      {step !== LAST && <Summary draft={draft} variant="bar" />}
     </div>
   );
 }

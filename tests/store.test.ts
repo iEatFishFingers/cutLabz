@@ -22,8 +22,7 @@ describe("store", () => {
 
   test("insert returns a row with id + createdAt", async () => {
     const row = await insertBooking(base);
-    assert.notEqual(row, "conflict");
-    if (row === "conflict") return;
+    assert.ok(typeof row === "object");
     assert.match(row.id, /^[0-9a-f-]{36}$/);
     assert.equal((await listBookingsForDate(base.date)).length, 1);
   });

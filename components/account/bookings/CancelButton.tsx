@@ -18,8 +18,11 @@ export default function CancelButton({ bookingId, summary }: { bookingId: string
       try {
         const res = await cancelBookingAction(bookingId);
         if (res.ok) {
+          setOpen(false);
           router.replace("/account?cancelled=1");
         } else if (res.code === "error") {
+          // Close the dialog; the banner below stays visible.
+          setOpen(false);
           setError(res.error);
         } else if (res.code === "auth") {
           router.push("/login?next=/account");
@@ -28,6 +31,7 @@ export default function CancelButton({ bookingId, summary }: { bookingId: string
           router.replace(`/account?notice=${res.code}`);
         }
       } catch {
+        setOpen(false);
         setError("Something went wrong. Check your connection and try again.");
       }
     });
@@ -35,9 +39,21 @@ export default function CancelButton({ bookingId, summary }: { bookingId: string
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={BTN_SECONDARY}>
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+        className={BTN_SECONDARY}
+      >
         Cancel
       </button>
+      {!open && error && (
+        <p role="alert" className="basis-full text-sm text-red-400">
+          {error}
+        </p>
+      )}
       {open && (
         <ConfirmDialog
           title="Cancel this appointment?"

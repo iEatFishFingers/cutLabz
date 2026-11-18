@@ -18,13 +18,20 @@ export type Viewer = {
   db: SupabaseClient;
 };
 
-type MembershipRow = { id: string; plan: string; starts_on: string; ends_on: string };
+type MembershipRow = {
+  id: string;
+  plan: string;
+  starts_on: string;
+  ends_on: string;
+  cancelled_at?: string | null;
+};
 
 export const toMembership = (r: MembershipRow): Membership => ({
   id: r.id,
   plan: r.plan,
   startsOn: r.starts_on,
   endsOn: r.ends_on,
+  cancelledAt: r.cancelled_at ?? null,
 });
 
 async function load(): Promise<Viewer | null> {
@@ -39,7 +46,7 @@ async function load(): Promise<Viewer | null> {
   const today = shopNow().date;
   const { data: rows } = await db
     .from("memberships")
-    .select("id,plan,starts_on,ends_on")
+    .select("id,plan,starts_on,ends_on,cancelled_at")
     .eq("user_id", user.id)
     .lte("starts_on", today)
     .gte("ends_on", today)

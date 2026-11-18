@@ -272,6 +272,9 @@ async function main() {
   }
 
   // Upcoming: a shuffled sample, respecting the same caps the app enforces.
+  // The DB trigger enforce_booking_cap rejects a 4th upcoming pending/confirmed
+  // booking per user, so each mock user is capped at 3 here (cancelled/past rows
+  // are exempt: the trigger only counts upcoming active ones).
   let target = 34;
   for (const f of shuffle(future)) {
     if (target <= 0) break;

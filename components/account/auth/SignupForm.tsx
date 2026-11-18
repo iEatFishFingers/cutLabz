@@ -46,6 +46,17 @@ export default function SignupForm({ next }: { next: string }) {
       <button type="submit" disabled={pending} className={primaryBtn}>
         {pending ? "Creating account" : "Create account"}
       </button>
+      <p className="text-xs text-white/50">
+        By creating an account you agree to our{" "}
+        <Link href="/terms" className="underline underline-offset-4 hover:text-white">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="underline underline-offset-4 hover:text-white">
+          Privacy Policy
+        </Link>
+        .
+      </p>
       <Link href={`/login${q}`} className={linkCls}>
         Already have an account? Sign in
       </Link>

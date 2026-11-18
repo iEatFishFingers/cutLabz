@@ -15,7 +15,7 @@ type SP = Promise<{ [k: string]: string | string[] | undefined }>;
 export default function LoginPage({ searchParams }: { searchParams: SP }) {
   return (
     <AuthCard eyebrow="Account" title="Sign in">
-      <Suspense fallback={<LoginForm next="/account" />}>
+      <Suspense fallback={<LoginForm next="/account" placeholder />}>
         <Gate searchParams={searchParams} />
       </Suspense>
     </AuthCard>
@@ -29,6 +29,7 @@ async function Gate({ searchParams }: { searchParams: SP }) {
   return (
     <LoginForm
       next={next}
+      notice={sp.deleted === "1" ? "Your account has been deleted." : undefined}
       initialError={sp.error === "link" ? "That link has expired. Sign in or request a new one." : undefined}
     />
   );

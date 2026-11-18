@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireCustomer } from "@/lib/customer/viewer";
-import { PasswordForm, ProfileForm } from "@/components/account/settings/SettingsForms";
+import { DeleteAccountForm, PasswordForm, ProfileForm } from "@/components/account/settings/SettingsForms";
 
 export const metadata: Metadata = {
   title: "Settings | Cut Labz",
@@ -21,6 +21,9 @@ export default async function SettingsPage({
       {reset && <PasswordForm highlight />}
       <ProfileForm name={v.name} phone={v.phone} email={v.email} />
       {!reset && <PasswordForm highlight={false} />}
+      <div className="pt-6">
+        <DeleteAccountForm />
+      </div>
     </div>
   );
 }

@@ -5,8 +5,11 @@ import type { ServerCatalog } from "./catalog";
 import { loadCatalog } from "./catalog-db";
 import { computeSlots } from "./availability";
 import {
+  BOOKING_LIMIT_MESSAGE,
   cancelBooking,
+  findBookingByRequestKey,
   insertBooking,
+  isActiveStatus,
   listActiveBookingsForUser,
   listBookingsForDate,
   type Booking,
@@ -26,6 +29,7 @@ import {
   formatDate,
   isValidDateString,
   quote,
+  REQUEST_KEY_RE,
   validateContact,
   type ConfirmedBooking,
   type CreateBookingResult,
@@ -160,6 +164,27 @@ export async function getSlots(
 
 const normaliseSpaces = (s: string) => s.trim().replace(/\s+/g, " ");
 
+const LIMIT_RESULT = {
+  ok: false,
+  code: "limit",
+  error: BOOKING_LIMIT_MESSAGE,
+} as const;
+
+function confirmed(catalog: ServerCatalog, row: Booking): ConfirmedBooking {
+  return {
+    reference: row.reference ?? `CL-${row.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+    date: row.date,
+    startMin: row.startMin,
+    endMin: row.endMin,
+    barberId: row.barberId,
+    barberName: getBarberName(catalog, row.barberId) ?? row.barberId,
+    serviceId: row.serviceId,
+    addonIds: row.addonIds,
+    durationMin: row.endMin - row.startMin,
+    totalGBP: row.totalGBP,
+  };
+}
+
 export async function createBooking(
   input: unknown,
   now: Now,
@@ -190,6 +215,28 @@ export async function createBooking(
   if (typeof startMin !== "number" || !Number.isInteger(startMin))
     return { ok: false, code: "invalid", error: "Choose a valid time." };
 
+  // Idempotency: a retry with the same key returns the booking already made.
+  let requestKey: string | null = null;
+  if (raw.requestKey !== undefined && raw.requestKey !== null) {
+    if (typeof raw.requestKey !== "string" || !REQUEST_KEY_RE.test(raw.requestKey))
+      return { ok: false, code: "invalid", error: "Invalid request." };
+    requestKey = raw.requestKey;
+  }
+  const replay = async (): Promise<CreateBookingResult | null> => {
+    if (!requestKey) return null;
+    const prior = await findBookingByRequestKey(viewer.userId, requestKey);
+    if (!prior) return null;
+    if (!isActiveStatus(prior.status))
+      return {
+        ok: false,
+        code: "invalid",
+        error: "This booking request was already used. Please start again.",
+      };
+    return { ok: true, booking: confirmed(catalog, prior) };
+  };
+  const replayed = await replay();
+  if (replayed) return replayed;
+
   const memberCut = isMembershipService(catalog, serviceId);
   if (memberCut) {
     const block = membershipBlock(viewer, serviceId, now, date);
@@ -208,11 +255,7 @@ export async function createBooking(
       error: "You already have an upcoming member cut. Cancel or complete it first.",
     };
   if (mine.length >= MAX_UPCOMING_BOOKINGS)
-    return {
-      ok: false,
-      code: "limit",
-      error: `You can hold up to ${MAX_UPCOMING_BOOKINGS} upcoming bookings. Cancel or complete one first.`,
-    };
+    return LIMIT_RESULT;
 
   if (!isInWindow(date, now.date))
     return { ok: false, code: "unavailable", error: "That date can't be booked." };
@@ -229,7 +272,8 @@ export async function createBooking(
     (s) => s.startMin === startMin,
   );
   const taken = { ok: false, code: "slot_taken", error: "That time was just taken. Pick another." } as const;
-  if (!slot) return taken;
+  // A concurrent request with the same key may have just taken this slot: return its booking.
+  if (!slot) return (await replay()) ?? taken;
 
   // For "any": least busy barber that day first, ties in catalog order.
   const candidates = orderCandidates(catalog, barberId, slot.barberIds, bookings);
@@ -250,17 +294,28 @@ export async function createBooking(
       totalGBP,
       userId: viewer.userId,
       membershipId: memberCut ? viewer.membership?.id ?? null : null,
+      requestKey,
     });
     if (row === "conflict") continue;
+    if (row === "limit") return LIMIT_RESULT;
+    if (row === "duplicate") {
+      // Lost a race against the same request key: return the winner.
+      const again = await replay();
+      return again ?? { ok: false, code: "error", error: "Something went wrong. Try again." };
+    }
+    // Race guard (belt and braces; the DB trigger is the hard cap): parallel
+    // requests could both pass the checks above. The earliest-created survive.
+    const after = (await listActiveBookingsForUser(viewer.userId, addDays(now.date, -1))).filter(
+      (b) => !hasStarted(b.date, b.startMin, now),
+    );
+    const rank = (b: Booking) => `${b.createdAt}|${b.id}`;
+    const olderThanRow = (b: Booking) => b.id !== row.id && rank(b) < rank(row);
     if (memberCut) {
-      // Race guard: two parallel requests could both pass the limit check.
-      // The earliest-created member cut survives; later ones are cancelled.
-      const after = (await listActiveBookingsForUser(viewer.userId, addDays(now.date, -1)))
-        .filter((b) => !hasStarted(b.date, b.startMin, now))
-        .filter(isMemberRow);
-      const rank = (b: Booking) => `${b.createdAt}|${b.id}`;
-      const older = after.filter((b) => b.id !== row.id && rank(b) < rank(row)).length;
-      if (after.length > MAX_UPCOMING_MEMBER_CUTS && older >= MAX_UPCOMING_MEMBER_CUTS) {
+      const members = after.filter(isMemberRow);
+      if (
+        members.length > MAX_UPCOMING_MEMBER_CUTS &&
+        members.filter(olderThanRow).length >= MAX_UPCOMING_MEMBER_CUTS
+      ) {
         await cancelBooking(viewer.userId, row.id);
         return {
           ok: false,
@@ -269,19 +324,14 @@ export async function createBooking(
         };
       }
     }
-    const booking: ConfirmedBooking = {
-      reference: `CL-${row.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      date: row.date,
-      startMin: row.startMin,
-      endMin: row.endMin,
-      barberId: row.barberId,
-      barberName: getBarberName(catalog, row.barberId) ?? row.barberId,
-      serviceId: row.serviceId,
-      addonIds: row.addonIds,
-      durationMin,
-      totalGBP: row.totalGBP,
-    };
-    return { ok: true, booking };
+    if (
+      after.length > MAX_UPCOMING_BOOKINGS &&
+      after.filter(olderThanRow).length >= MAX_UPCOMING_BOOKINGS
+    ) {
+      await cancelBooking(viewer.userId, row.id);
+      return LIMIT_RESULT;
+    }
+    return { ok: true, booking: confirmed(catalog, row) };
   }
-  return taken;
+  return (await replay()) ?? taken;
 }

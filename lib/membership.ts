@@ -8,6 +8,8 @@ export type Membership = {
   plan: string;
   startsOn: string; // inclusive
   endsOn: string; // inclusive: the last day a booking may fall on
+  /** ISO timestamp when the member cancelled; access continues until endsOn. Null when not cancelled. */
+  cancelledAt: string | null;
 };
 
 /** A placeholder (unpaid) membership lasts this many days, start day included. */
