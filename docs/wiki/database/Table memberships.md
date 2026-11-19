@@ -50,3 +50,6 @@ Adding statuses (e.g. cancelled) would need the exclusion `where` clause revisit
 ## Known gaps
 - `plan` may reference a non-membership service (see [[Table services and addons]]).
 - No row is auto-expired; "active" is derived from dates in code.
+
+## Changes since this note was written (2026-11-19)
+`cancelled_at` was added: cancelling ends the membership at the end of the paid period rather than immediately, and the customer can resume before then. Account deletion removes the customer's membership rows. See [[Customer memberships lib]].

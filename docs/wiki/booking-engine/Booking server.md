@@ -62,3 +62,6 @@ Keep validation order: cheap checks before DB reads. Any new rule must also be a
 - Booking `reference` is recomputed (`:273`) instead of using `row.reference` ([[Store Supabase]] already returns it); they agree today.
 - Race guard: if the cancel fails or throws, the surplus member cut remains (unverified).
 - `getSlots` reveals "Members only." to anonymous users but not slots; no auth check on paid services (intended).
+
+## Changes since this note was written (2026-11-19)
+`createBooking` accepts a `requestKey`: a retry or double-click with the same key returns the original booking instead of an error (on a slot conflict it first checks for the replay). The 3-booking cap is now checked in the app and enforced in the database (see [[DB functions]]), and phone is required. Customer cancellations stamp `status_changed_by = 'customer'`. `rescheduleMyBooking` requires an `expected` block (date, start, barber) and returns code "stale" if the booking moved since the page loaded. Messages `BOOKING_LIMIT_MESSAGE` and `MEMBER_CUT_LIMIT_MESSAGE` live in the customer lib. Premium members get free add-ons via `quote(..., { freeAddons })`.

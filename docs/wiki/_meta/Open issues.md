@@ -2,11 +2,28 @@
 area: meta
 source: [lib/, app/, components/, proxy.ts, supabase/schema.sql]
 commit: 14ba133
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 # Open issues
 
-**In plain English:** bugs, risks and inconsistencies found while documenting. Nothing here was fixed (documentation only). Severity is the overseer's judgement: High = security/money, Med = wrong behaviour possible, Low = tidiness. Back to [[00 Index]] | [[Security Model]].
+**In plain English:** bugs, risks and inconsistencies found while documenting. The table below was written before the QA rounds; see the status section first for what has since been fixed. Severity is the overseer's judgement: High = security/money, Med = wrong behaviour possible, Low = tidiness. Back to [[00 Index]] | [[Security Model]].
+
+## Status on 2026-11-19
+Three fix rounds followed the persona QA and the simulated month (commits `104cd85`, `484909d`, `a9871d1`; record in `docs/qa/2026-11-18-qa-and-month-simulation.md`).
+
+| # | Status | How |
+|---|---|---|
+| 2 | Fixed | Customer opening `/admin` is no longer signed out |
+| 5 | Fixed | Status changes are state-checked, stale-checked and audit-stamped |
+| 6 | Partly | Admin walk-ins are idempotent and capped by date limits; "override hours" still skips time off by design |
+| 7 | Partly | Time off is capped at 366 days and warns about overlapping bookings; no past-date block |
+| 10 | Fixed | Database trigger `bookings_enforce_cap` |
+| 20 | Fixed | `supabase/schema.sql` mirrors all later migrations |
+| 30 | Fixed | Cancel and resume membership |
+| 1, 3, 4, 8, 9 | Open | Placeholder memberships, account-exists message, admin login wording, no current-password check, no rate limiting |
+| Others | Not rechecked | Low-severity items below were not re-verified after the fix rounds |
+
+New open items from the QA rounds (owner decisions, not bugs): free-cut allowance and missed-cut policy, no-show and late-cancel fees, notifications, payments. See `status.md`.
 
 ## Security / business
 | # | Sev | Issue | Evidence | Note |

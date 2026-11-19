@@ -46,3 +46,6 @@ Keep the user scoping on every query. When real payments arrive, this insert sho
 - No cancel function exists (the registry scope mentions "cancel"; code only has overview + subscribe). Customers cannot end a membership themselves; it simply lapses after 30 days.
 - `upcomingStart?: never` in the overview return type is dead (`:52`).
 - Memory-fallback clash check compares to the new period only, fine for 30-day rows.
+
+## Changes since this note was written (2026-11-19)
+Added `cancelMembership` (end of period via `cancelled_at`) and `resumeMembership`. Issue 30 in [[Open issues]] (no cancel flow) is closed. Joining is still a free placeholder, see [[Placeholder membership]].

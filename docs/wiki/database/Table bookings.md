@@ -60,3 +60,6 @@ Changing the `where` status list changes which statuses hold a slot; update [[Av
 ## Known gaps
 - `stripe_payment_intent`, `payment_status` have no writer found in `lib/` (no billing yet; see [[Placeholder membership]]).
 - `status`/`cancelled_at` consistency is not enforced by SQL.
+
+## Changes since this note was written (2026-11-19)
+Commits `104cd85`, `484909d`, `a9871d1` added columns: `request_key` (idempotency; unique with `user_id`, and a second unique index for walk-ins where `user_id` is null), `status_changed_at` and `status_changed_by` (audit: 'customer', an admin name, or null for untouched rows), and `contacted_at` (set when staff mark a shop-cancelled customer as contacted). A trigger `bookings_enforce_cap` now rejects a 4th upcoming booking (error `booking_limit_reached`). See [[DB functions]]. Mirrored in `supabase/schema.sql`.

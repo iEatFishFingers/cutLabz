@@ -44,3 +44,6 @@ Keep `security invoker` and keep grants; making it definer would let any authent
 
 ## Known gaps
 - Header comment (schema.sql:2) lists only three migrations; see [[Schema history and seed data]].
+
+## Changes since this note was written (2026-11-19)
+New function `enforce_booking_cap()` (PL/pgSQL, takes a `pg_advisory_xact_lock` per customer, counts other pending or confirmed future bookings in Europe/London time, raises `booking_limit_reached` with code P0001 at 3 or more) with trigger `bookings_enforce_cap` before insert or update of status, date, start, user. This closes the former race on the 3-booking cap. The app maps the error to the "limit" result.

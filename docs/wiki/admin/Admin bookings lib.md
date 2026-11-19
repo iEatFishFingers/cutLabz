@@ -40,3 +40,6 @@ Query error throws generic `"Could not load..."`; `23P01` mapped to a friendly m
 - `listAdminBookings` has no row limit (at most one week).
 
 Links: [[Admin board components]], [[Route admin-dashboard]], [[Admin hub]], [[Time model]], [[00 Index]].
+
+## Changes since this note was written (2026-11-19)
+Status changes go through `changeBookingStatus(session, id, status, expected)`: the allowed moves depend on the current state and whether the cut has started (`allowedStatusChanges`), a stale view returns "This booking changed. Refresh and try again.", and each change is stamped with who and when. Added `searchAdminBookings` (returns `{bookings, truncated}`), `getAttentionItems` (clashes in the next 28 days, unresolved past bookings from the last 45 days, shop-cancelled customers to contact from the last 14 days), and walk-in idempotency. Dates are clamped to 2000 to 2100. Issue 5 in [[Open issues]] is closed.

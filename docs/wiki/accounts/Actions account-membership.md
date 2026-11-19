@@ -42,3 +42,6 @@ When payments are added, do not grant membership here; do it from a verified pay
 ## Known gaps
 - `/account/layout` data (member badge, if any) is not revalidated; only the three paths above (unverified whether it matters).
 - No leave/cancel action.
+
+## Changes since this note was written (2026-11-19)
+Added `cancelMembershipAction` and `resumeMembershipAction` in `app/account/membership/actions.ts`.

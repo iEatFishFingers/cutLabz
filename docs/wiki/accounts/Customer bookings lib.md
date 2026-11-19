@@ -44,3 +44,6 @@ Keep validation here even though [[Actions account-bookings]] pre-checks shapes.
 ## Known gaps
 - Reschedule message text hard-codes "24 hours" (`:55-58`) instead of deriving from `SELF_SERVE_NOTICE_MIN`.
 - `getRescheduleSlots` returns empty slots (not an error) when the member-cut rule blocks the date (`:169-170`).
+
+## Changes since this note was written (2026-11-19)
+`MyBooking` now carries `cancelledBy` and `cancelledAt` so a shop-cancelled booking says so and shows the shop contact details (`lib/shop-contact.ts`). `getMyBookingLimits` returns the cap state for the booking UI. New `lib/customer/account.ts` holds `deleteMyAccount`: admins are refused; upcoming bookings are cancelled; all bookings are anonymised (name "Deleted customer", email `deleted+<id>@example.invalid`, phone "deleted"); then the sign-in is deleted.

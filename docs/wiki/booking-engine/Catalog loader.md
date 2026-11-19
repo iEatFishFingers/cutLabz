@@ -57,3 +57,6 @@ Keep column lists in step with [[Database hub]] tables. Adding a field to `Clien
 ## Known gaps
 - Whole `time_off` and `availability` tables are read per call (no date filter).
 - Reschedule page calls `getClientCatalog()` uncached (`app/account/bookings/[id]/reschedule/page.tsx:50`), so the `catalog` tag does not apply there.
+
+## Changes since this note was written (2026-11-19)
+`loadCatalog` hides barbers with no working hours from `/book`; the admin screens use `loadAdminCatalog`, which still lists them.

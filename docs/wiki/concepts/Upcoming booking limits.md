@@ -20,3 +20,6 @@ Race guard (member cuts only, `lib/booking-server.ts:255-271`): after insert, if
 Only rows with the customer's `user_id` count; admin walk-in bookings without a `user_id` do not.
 
 Related: [[Booking server]], [[Request Lifecycles#Book a cut]], [[Member cut]], [[Membership rules]], [[Store Supabase]], [[Tests unit]], [[00 Index]].
+
+## Changes since this note was written (2026-11-19)
+The 3-upcoming-booking cap now has a database guard (see [[DB functions]]), so concurrent requests cannot exceed it. Issue 10 in [[Open issues]] is closed.

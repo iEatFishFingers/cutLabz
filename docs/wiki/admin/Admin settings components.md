@@ -35,3 +35,6 @@ No guards inside components: protection lives in the actions ([[Route admin-cata
 - 5000-row cap, see [[Route admin-schedule]].
 
 Used by the pages listed in [[Admin hub]]. Also [[Server action]], [[00 Index]].
+
+## Changes since this note was written (2026-11-19)
+Deleting a barber or a service now asks for confirmation (`ConfirmDelete`) and has delete actions; time off is capped at 366 days and warns about overlapping bookings.

@@ -49,3 +49,6 @@ Public read on catalog tables; no public access to `time_off`, `bookings`, `memb
 Free placeholder memberships, `email_not_confirmed` enumeration, customer sign-out on `/admin`, no app rate limiting, unrestricted admin status transitions: all in [[Open issues]].
 
 [[Architecture Overview]] | [[00 Index]]
+
+## Changes since this note was written (2026-11-19)
+Account deletion, the database cap guard, audit stamps on every status change, stale-state checks on admin and reschedule actions, and idempotency keys were added. The rate-limiting gap (issue 9) and the account-exists message (issue 3) remain. The QA record is in `docs/qa/2026-11-18-qa-and-month-simulation.md`.

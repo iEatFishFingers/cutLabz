@@ -18,3 +18,6 @@ updated: 2026-11-18
 Risk: any account can become a member for free, again every 30 days. Recorded in [[Open issues]].
 
 Related: [[Membership period]], [[Member cut]], [[Actions account-membership]], [[Route account-membership]], [[Customer memberships lib]], [[Service-role key]], [[00 Index]].
+
+## Changes since this note was written (2026-11-19)
+Still a placeholder: memberships are free and self-serve. What changed is that members can now cancel (end of period) and resume. Payments remain the top open product item.

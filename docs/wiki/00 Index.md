@@ -2,11 +2,13 @@
 area: overview
 source: [docs/wiki/]
 commit: 14ba133
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 # 00 Index
 
 **In plain English:** the front door of the Cut Labz wiki. Start with the four overview notes, then dive into an area. Every note in the vault is linked below. Notes are stamped with the commit they describe (`14ba133`); if the code has moved on, re-check before trusting a line number.
+
+> **Drift notice (2026-11-19):** the notes describe commit `14ba133`. Three fix rounds (`104cd85`, `484909d`, `a9871d1`) changed bookings, memberships, accounts and the admin panel. Notes touched by those changes end with a "Changes since this note was written" section. Untouched notes may still be accurate; re-check line numbers before trusting them.
 
 ## Start here
 1. [[Architecture Overview]] - what the pieces are and how they connect.

@@ -47,3 +47,6 @@ Keep password limits aligned with [[Auth forms and actions]] (8-72).
 ## Known gaps
 - `changePassword` does not require the current password (relies on being signed in); no `revalidatePath` needed there.
 - `updateProfile` passes dummy email `a@b.co` to `validateDetails` (`actions.ts:19`) just to reuse it.
+
+## Changes since this note was written (2026-11-19)
+Added a delete-my-account action (`deleteAccountAction`): the customer must type their email to confirm, then is sent to `/login?deleted=1`. A `/privacy` page now exists.

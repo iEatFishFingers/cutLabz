@@ -39,3 +39,6 @@ Every new admin action must call `requireAdminAction()` first. Do not use the se
 ## Known gaps
 - Unlike [[Viewer and session]], `check()` does not guard `hasSupabaseEnv()`; missing env makes `createSupabaseServerClient` throw instead of redirecting.
 - `signOut` inside `check()` runs during render and may fail silently (caught, `:26-30`).
+
+## Changes since this note was written (2026-11-19)
+A signed-in customer who opens `/admin` is no longer signed out (issue 2 in [[Open issues]]). `AdminSession` now has a `barberId` so staff linked to a barber default to their own calendar.

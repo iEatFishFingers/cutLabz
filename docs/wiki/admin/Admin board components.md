@@ -32,3 +32,6 @@ Reopen onto an occupied slot returns "That barber already has a booking at that 
 
 ## Known gaps
 - Payment status is displayed but cannot be changed anywhere in the admin UI.
+
+## Changes since this note was written (2026-11-19)
+New components: `BookingSearch`, `BookingDetail` (red Cancel, amber No-show), `AttentionPanel` on the dashboard, `PastBookings`, clash badges and status markers on `DayBoard`, and a draft-saving `NewBookingForm`.

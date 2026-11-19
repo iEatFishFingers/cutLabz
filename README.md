@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cut Labz
 
-## Getting Started
+Membership barbershop site for a Manchester shop: public pages, online booking, customer accounts with memberships, and an admin panel for staff.
 
-First, run the development server:
+Live: https://cutlabz-roan.vercel.app
 
+## Stack
+Next.js 16 (App Router, Cache Components), React 19, TypeScript, Tailwind 4, framer-motion, Supabase (Postgres, auth, row level security), hosted on Vercel. This version of Next.js has breaking changes; read `AGENTS.md` and `node_modules/next/dist/docs/` before changing framework code.
+
+## Run it
 ```bash
+npm install
+# create .env.local with the Supabase URL, anon key and service-role key (never commit this file)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+Without Supabase settings the app falls back to an in-memory store for local work.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts
+| Command | What |
+|---|---|
+| `npm run dev` / `build` / `start` | Develop, build, serve |
+| `npm test` | Unit tests |
+| `npm run test:integration` | Opt-in tests against the live database |
+| `npm run seed:mock` | Load example customers and bookings |
+| `npm run seed:mock:remove` | Remove the example data (do this before real customers) |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Key rules
+Shop time is Europe/London. Cuts are 30 minutes, bookable up to 28 days ahead with 60 minutes' notice; at most 3 upcoming bookings and 1 upcoming member cut; customers can cancel or reschedule until 24 hours before. Memberships are a free placeholder until payments are built. The server recomputes prices and durations; nothing from the client is trusted.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Docs
+| Where | What |
+|---|---|
+| `status.md` | Current state, open decisions, what is next |
+| `docs/wiki/` | Codebase wiki (open as an Obsidian vault, start at `00 Index`) |
+| `docs/qa/` | QA and month-simulation results with the money model |
+| `supabase/schema.sql` | Database schema and migrations |
+| `knowledge/`, `evals/` | FAQ chatbot knowledge and test questions |
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The home page, terms, nav, footer, global styles and `public/` are cloned from another site and are not edited.

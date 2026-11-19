@@ -44,3 +44,6 @@ The file contains no secrets (project ref only in a comment).
 - Non-idempotent policies (:115-136, :178-181).
 - Missing constraints noted per table: no `(barber_id, weekday)` uniqueness ([[Table availability]]), no time-off overlap guard ([[Table time_off]]), `memberships.plan` not limited to membership kind ([[Table memberships]]).
 - Live schema may contain objects not in the file (see [[Database hub]]).
+
+## Changes since this note was written (2026-11-19)
+Migrations applied after this note: `customer_flow_hardening`, `admin_audit_and_walkin_idempotency`, `booking_contacted_marker`. All are mirrored in `supabase/schema.sql`. The example data seed now stamps the audit columns too.

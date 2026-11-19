@@ -1,5 +1,6 @@
 -- Cut Labz schema (mirrors what is applied in Supabase, project kqomhuuwpvdxhranptke).
--- Applied as migrations: init_cutlabz_schema, security_hardening, replace_availability_fn.
+-- Applied as migrations: init_cutlabz_schema, security_hardening, replace_availability_fn, customer_flow_hardening,
+-- admin_audit_and_walkin_idempotency, booking_contacted_marker.
 -- Dates/times are shop-local (Europe/London): booking_date + minutes from midnight,
 -- matching lib/store.ts and lib/availability.ts.
 
